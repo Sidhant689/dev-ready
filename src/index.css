@@ -1,0 +1,17 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body { overflow: hidden; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Hover states that can't be done with inline styles */
+.t-row:hover  { background: #1e293b !important; }
+.s-btn:hover  { background: #1e293b !important; color: #e2e8f0 !important; }
+.q-card:hover { background: #1e293b !important; border-color: #334155 !important; }
+.st-btn:hover { background: #1e293b !important; color: #e2e8f0 !important; }
+
+input::placeholder { color: #475569; }
+input:focus { border-color: #6366f1 !important; }
+
+*::-webkit-scrollbar       { width: 4px; }
+*::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 2px; }
