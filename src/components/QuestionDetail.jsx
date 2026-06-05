@@ -42,11 +42,11 @@ export default function QuestionDetail({
             marginBottom: 10,
           }}
         >
-          <span>{activeQ.tlabel}</span>
+          <span>{activeQ.topic_label}</span>
           <span>›</span>
-          <span>{activeQ.slabel}</span>
+          <span>{activeQ.section_label}</span>
           <span>›</span>
-          <span>Q{activeQ.sl}</span>
+          <span>Q{activeQ.id}</span>
           <button
             style={{
               marginLeft: "auto",
@@ -65,11 +65,11 @@ export default function QuestionDetail({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <Badge level={activeQ.level} />
+          <Badge level={activeQ.difficulty} />
         </div>
 
         <div style={{ fontSize: 17, fontWeight: 600, color: "#f1f5f9", lineHeight: 1.5 }}>
-          {activeQ.q}
+          {activeQ.text}
         </div>
       </div>
 

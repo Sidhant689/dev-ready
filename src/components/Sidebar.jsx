@@ -1,11 +1,9 @@
-import { totalQs, doneQs } from "../utils/helpers";
-
 export default function Sidebar({
   topics,
+  topicSections,
   activeTopic,
   activeSection,
   expanded,
-  statuses,
   onTopicClick,
   onSectionClick,
 }) {
@@ -22,10 +20,10 @@ export default function Sidebar({
       }}
     >
       {topics.map((topic) => {
-        const done = doneQs(topic, statuses);
-        const total = totalQs(topic);
         const isExpanded = !!expanded[topic.id];
         const isActiveTopic = activeTopic?.id === topic.id;
+        const sections = topicSections[topic.id] || [];
+        const total = topic.total_count || 0;
 
         return (
           <div key={topic.id}>
@@ -48,7 +46,7 @@ export default function Sidebar({
                   width: 8,
                   height: 8,
                   borderRadius: "50%",
-                  background: topic.color,
+                  background: topic.color_hex,
                   flexShrink: 0,
                 }}
               />
@@ -56,7 +54,7 @@ export default function Sidebar({
                 {topic.label}
               </span>
               <span style={{ fontSize: 11, color: "#475569" }}>
-                {done}/{total}
+                0/{total}
               </span>
               <span
                 style={{
@@ -72,7 +70,7 @@ export default function Sidebar({
 
             {/* Section buttons */}
             {isExpanded &&
-              topic.sections.map((section) => {
+              sections.map((section) => {
                 const isActiveSection =
                   activeSection?.id === section.id && isActiveTopic;
                 return (
@@ -99,9 +97,6 @@ export default function Sidebar({
                     onClick={() => onSectionClick(topic, section)}
                   >
                     <span style={{ flex: 1, textAlign: "left" }}>{section.label}</span>
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "#475569" }}>
-                      {section.qs.length}
-                    </span>
                   </button>
                 );
               })}

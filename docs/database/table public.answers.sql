@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────
--- PrepStack — Supabase Schema
+-- DevReady — Supabase Schema
 -- Paste this in: Supabase Dashboard → SQL Editor → Run
 -- ─────────────────────────────────────────────
 

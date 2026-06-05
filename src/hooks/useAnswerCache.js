@@ -19,13 +19,17 @@ export function useAnswerCache() {
         try {
           const val = localStorage.getItem(ANS_PREFIX + k);
           if (val) entries[k] = val;
-        } catch {}
+        } catch {
+          // Ignore storage access errors
+        }
       });
       setCached(entries);
-    } catch {}
+    } catch {
+      // Ignore hydration errors
+    }
   }, []);
 
-  const loadAnswer = async (topic, section, q, key) => {
+  const loadAnswer = async (questionId, key) => {
     setError("");
 
     if (cached[key]) {
@@ -36,7 +40,7 @@ export function useAnswerCache() {
     setLoading(true);
     setAnswer("");
     try {
-      const ans = await fetchAnswer(topic.id, section.id, q[0]);
+      const ans = await fetchAnswer(questionId);
       if (ans) {
         setAnswer(ans);
         setCached((prev) => {
@@ -44,7 +48,9 @@ export function useAnswerCache() {
           try {
             localStorage.setItem(ANS_PREFIX + key, ans);
             localStorage.setItem(KEYS_KEY, JSON.stringify(Object.keys(next)));
-          } catch {}
+          } catch {
+            // Ignore storage errors
+          }
           return next;
         });
       }

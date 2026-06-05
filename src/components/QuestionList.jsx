@@ -1,10 +1,10 @@
-import { useState, useMemo } from "react";
-import { STATUS_CFG, LEVELS } from "../constants";
+import { useState, useEffect, useMemo } from "react";
+import { STATUS_CFG } from "../constants";
 import { qKey } from "../utils/helpers";
+import { fetchQuestions, fetchLevelsList } from "../services/questionService";
 import Badge from "./ui/Badge";
 
 export default function QuestionList({
-  activeTopic,
   activeSection,
   statuses,
   cached,
@@ -12,15 +12,49 @@ export default function QuestionList({
 }) {
   const [search, setSearch] = useState("");
   const [lvlFilter, setLvlFilter] = useState("All");
+  const [questions, setQuestions] = useState([]);
+  const [levels, setLevels] = useState(["All"]);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
+
+  // ✅ Fetch questions when section changes
+  useEffect(() => {
+    if (!activeSection) {
+      setQuestions([]);
+      return;
+    }
+
+    setLoadingQuestions(true);
+    fetchQuestions(activeSection.id)
+      .then((data) => {
+        setQuestions(data);
+        setLoadingQuestions(false);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch questions:", err);
+        setLoadingQuestions(false);
+      });
+  }, [activeSection?.id]);
+
+  // ✅ Fetch levels on mount
+  useEffect(() => {
+    fetchLevelsList()
+      .then((data) => {
+        setLevels(data);
+        setLvlFilter("All");
+      })
+      .catch((err) => {
+        console.error("Failed to fetch levels:", err);
+      });
+  }, []);
 
   const filteredQs = useMemo(() => {
-    if (!activeSection) return [];
-    return activeSection.qs.filter((q) => {
-      const matchSearch = !search || q[1].toLowerCase().includes(search.toLowerCase());
-      const matchLevel = lvlFilter === "All" || q[2] === lvlFilter;
+    if (!questions) return [];
+    return questions.filter((q) => {
+      const matchSearch = !search || q.text.toLowerCase().includes(search.toLowerCase());
+      const matchLevel = lvlFilter === "All" || q.difficulty_levels?.label === lvlFilter;
       return matchSearch && matchLevel;
     });
-  }, [activeSection, search, lvlFilter]);
+  }, [questions, search, lvlFilter]);
 
   const handleSectionChange = () => {
     setSearch("");
@@ -28,7 +62,9 @@ export default function QuestionList({
   };
 
   // Reset filters when section changes
-  useMemo(() => { handleSectionChange(); }, [activeSection?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { 
+    handleSectionChange(); 
+  }, [activeSection?.id]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -94,7 +130,7 @@ export default function QuestionList({
             value={lvlFilter}
             onChange={(e) => setLvlFilter(e.target.value)}
           >
-            {LEVELS.map((l) => (
+            {levels.map((l) => (
               <option key={l}>{l}</option>
             ))}
           </select>
@@ -103,57 +139,66 @@ export default function QuestionList({
 
       {/* Question cards */}
       <div style={{ flex: 1, overflowY: "auto", padding: 8 }}>
-        {filteredQs.length === 0 && (
+        {loadingQuestions ? (
+          <p style={{ color: "#475569", fontSize: 13, textAlign: "center", padding: 24 }}>
+            Loading questions...
+          </p>
+        ) : filteredQs.length === 0 ? (
           <p style={{ color: "#475569", fontSize: 13, textAlign: "center", padding: 24 }}>
             No questions match your filter.
           </p>
-        )}
-        {filteredQs.map((q) => {
-          const k = qKey(activeTopic.id, activeSection.id, q[0]);
-          const st = statuses[k] || "To Do";
-          return (
-            <div
-              key={q[0]}
-              className="q-card"
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                padding: "10px 12px",
-                borderRadius: 8,
-                cursor: "pointer",
-                border: "1px solid transparent",
-                background: "transparent",
-                transition: "all .1s",
-                marginBottom: 4,
-              }}
-              onClick={() => onOpenQuestion(activeTopic, activeSection, q)}
-            >
-              <span
+        ) : (
+          filteredQs.map((q) => {
+            const k = qKey(q.id);
+            const st = statuses[k] || "To Do";
+            return (
+              <div
+                key={q.id}
+                className="q-card"
                 style={{
-                  color: STATUS_CFG[st].color,
-                  fontSize: 12,
-                  flexShrink: 0,
-                  marginTop: 2,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  border: "1px solid transparent",
+                  background: "transparent",
+                  transition: "all .1s",
+                  marginBottom: 4,
                 }}
+                onClick={() => onOpenQuestion(activeSection, q)}
               >
-                {STATUS_CFG[st].icon}
-              </span>
-              <span style={{ fontSize: 11, color: "#475569", flexShrink: 0, marginTop: 3, minWidth: 20 }}>
-                {q[0]}.
-              </span>
-              <span style={{ fontSize: 13, color: "#e2e8f0", lineHeight: 1.5, flex: 1 }}>
-                {q[1]}
-                {cached[k] && (
-                  <span style={{ marginLeft: 5, fontSize: 11, color: "#22c55e" }} title="Cached locally">
-                    ⚡
-                  </span>
-                )}
-              </span>
-              <Badge level={q[2]} />
-            </div>
-          );
-        })}
+                <span
+                  style={{
+                    color: STATUS_CFG[st].color,
+                    fontSize: 12,
+                    flexShrink: 0,
+                    marginTop: 2,
+                  }}
+                >
+                  {STATUS_CFG[st].icon}
+                </span>
+                <span style={{ fontSize: 11, color: "#475569", flexShrink: 0, marginTop: 3, minWidth: 20 }}>
+                  {q.serial_number}.
+                </span>
+                <span style={{ fontSize: 13, color: "#e2e8f0", lineHeight: 1.5, flex: 1 }}>
+                  {q.text}
+                  {cached[k] && (
+                    <span style={{ marginLeft: 5, fontSize: 11, color: "#22c55e" }} title="Cached locally">
+                      ⚡
+                    </span>
+                  )}
+                </span>
+                <Badge
+                  level={q.difficulty_levels?.label}
+                  bgColor={q.difficulty_levels?.bg_color}
+                  textColor={q.difficulty_levels?.text_color}
+                />
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

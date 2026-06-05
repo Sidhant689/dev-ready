@@ -1,46 +1,69 @@
-import { useState, useMemo } from "react";
-import { TOPICS } from "./data/topics";
+import { useState, useEffect, useMemo } from "react";
 import { useStatuses } from "./hooks/useStatuses";
 import { useAnswerCache } from "./hooks/useAnswerCache";
-import { qKey, totalQs } from "./utils/helpers";
+import { qKey } from "./utils/helpers";
+import { fetchTopics, fetchSections } from "./services/questionService";
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
 import QuestionList from "./components/QuestionList";
 import QuestionDetail from "./components/QuestionDetail";
 
 export default function App() {
-  const [activeTopic, setActiveTopic] = useState(TOPICS[0]);
-  const [activeSection, setActiveSection] = useState(TOPICS[0].sections[0]);
+  const [topics, setTopics] = useState([]);
+  const [activeTopic, setActiveTopic] = useState(null);
+  const [activeSection, setActiveSection] = useState(null);
+  const [topicSections, setTopicSections] = useState({});
   const [activeQ, setActiveQ] = useState(null);
-  const [expanded, setExpanded] = useState({ ".NET": true });
+  const [expanded, setExpanded] = useState({});
 
   const { statuses, saveStatus } = useStatuses();
-  const { cached, answer, loading, error, loadAnswer, clearAnswer } = useAnswerCache();
+  const { cached, answer, loading: answerLoading, error: answerError, loadAnswer, clearAnswer } = useAnswerCache();
+
+  // ✅ Fetch topics on mount
+  useEffect(() => {
+    fetchTopics()
+      .then((data) => {
+        setTopics(data);
+        if (data.length > 0) {
+          setActiveTopic(data[0]);
+          setExpanded({ [data[0].id]: true });
+          // Fetch sections for first topic
+          fetchSections(data[0].id).then((sections) => {
+            setTopicSections((prev) => ({ ...prev, [data[0].id]: sections }));
+            if (sections.length > 0) {
+              setActiveSection(sections[0]);
+            }
+          });
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch topics:", err);
+      });
+  }, []);
 
   const totalDone = useMemo(
     () => Object.values(statuses).filter((v) => v === "Done").length,
     [statuses]
   );
-  const totalAll = useMemo(
-    () => TOPICS.reduce((acc, t) => acc + totalQs(t), 0),
-    []
-  );
 
-  const activeKey = activeQ ? qKey(activeQ.tid, activeQ.sid, activeQ.sl) : null;
+  const totalAll = useMemo(() => {
+    return topics.reduce((acc, t) => acc + (t.total_count || 0), 0);
+  }, [topics]);
+
+  const activeKey = activeQ ? qKey(activeQ.id) : null;
   const activeStatus = activeKey ? statuses[activeKey] ?? "To Do" : "To Do";
 
-  const openQuestion = (topic, section, q) => {
-    const k = qKey(topic.id, section.id, q[0]);
+  const openQuestion = (section, question) => {
+    const k = qKey(question.id);
     setActiveQ({
-      tid: topic.id,
-      sid: section.id,
-      sl: q[0],
-      q: q[1],
-      level: q[2],
-      slabel: section.label,
-      tlabel: topic.label,
+      id: question.id,
+      text: question.text,
+      difficulty: question.difficulty_levels?.label || "Basic",
+      difficulty_id: question.difficulty_id,
+      section_label: section.label,
+      topic_label: activeTopic?.label,
     });
-    loadAnswer(topic, section, q, k);
+    loadAnswer(question.id, k);
   };
 
   const closeQuestion = () => {
@@ -48,12 +71,24 @@ export default function App() {
     clearAnswer();
   };
 
-  const handleTopicClick = (topic) => {
+  const handleTopicClick = async (topic) => {
     setExpanded((prev) => ({ ...prev, [topic.id]: !prev[topic.id] }));
     setActiveTopic(topic);
-    if (topic.sections.length) {
-      setActiveSection(topic.sections[0]);
-      closeQuestion();
+    closeQuestion();
+
+    // Fetch sections if not already fetched
+    if (!topicSections[topic.id]) {
+      try {
+        const sections = await fetchSections(topic.id);
+        setTopicSections((prev) => ({ ...prev, [topic.id]: sections }));
+        if (sections.length > 0) {
+          setActiveSection(sections[0]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch sections:", err);
+      }
+    } else if (topicSections[topic.id].length > 0) {
+      setActiveSection(topicSections[topic.id][0]);
     }
   };
 
@@ -82,11 +117,11 @@ export default function App() {
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         <Sidebar
-          topics={TOPICS}
+          topics={topics}
+          topicSections={topicSections}
           activeTopic={activeTopic}
           activeSection={activeSection}
           expanded={expanded}
-          statuses={statuses}
           onTopicClick={handleTopicClick}
           onSectionClick={handleSectionClick}
         />
@@ -98,8 +133,8 @@ export default function App() {
               activeKey={activeKey}
               activeStatus={activeStatus}
               answer={answer}
-              loading={loading}
-              error={error}
+              loading={answerLoading}
+              error={answerError}
               onBack={closeQuestion}
               onSaveStatus={saveStatus}
             />

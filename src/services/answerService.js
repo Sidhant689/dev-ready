@@ -1,13 +1,11 @@
 import { supabase } from "../config/supabaseClient";
 
-export async function fetchAnswer(topic, sectionId, sl) {
+// ✅ UPDATED: Fetch answer by question ID (new schema)
+export async function fetchAnswer(questionId) {
   const { data, error } = await supabase
     .from("answers")
-    .select("answer")
-    .eq("topic", topic)
-    .eq("section_id", sectionId)
-    .eq("sl", sl)
-    .limit(1)
+    .select("content, is_verified, source_url")
+    .eq("question_id", questionId)
     .single();
 
   if (error && error.code !== "PGRST116") {
@@ -15,5 +13,5 @@ export async function fetchAnswer(topic, sectionId, sl) {
     throw new Error(error.message);
   }
 
-  return data?.answer ?? null;
+  return data?.content ?? null;
 }

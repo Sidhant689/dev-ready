@@ -1,11 +1,6 @@
-export const qKey = (tid, sid, sl) => `${tid}||${sid}||${sl}`;
+// ✅ UPDATED: Simplified key generation using questionId only
+export const qKey = (questionId) => `q_${questionId}`;
 
-export const totalQs = (topic) =>
-  topic.sections.reduce((acc, s) => acc + s.qs.length, 0);
+// ✅ REMOVED: totalQs - now computed from database total_count
+// ✅ REMOVED: doneQs - now computed from user_progress table
 
-export const doneQs = (topic, statuses) =>
-  topic.sections.reduce(
-    (acc, s) =>
-      acc + s.qs.filter((q) => statuses[qKey(topic.id, s.id, q[0])] === "Done").length,
-    0
-  );
