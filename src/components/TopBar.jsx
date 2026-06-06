@@ -1,4 +1,4 @@
-export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut, onSearchOpen, theme, onToggleTheme }) {
+export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut, onSearchOpen, onSettingsOpen, theme, onToggleTheme, onLogoClick }) {
   const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
 
   // Derive display name / initials from user metadata
@@ -22,16 +22,34 @@ export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest,
           </svg>
         </button>
 
-        {/* Logo */}
-        <div className="flex items-center gap-2 font-bold text-heading text-base select-none">
+        {/* Logo — click to go home/dashboard */}
+        <button
+          onClick={onLogoClick}
+          className="flex items-center gap-2 font-bold text-heading text-base select-none cursor-pointer hover:opacity-80 transition-opacity"
+        >
           <div
-            className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center text-white text-sm font-bold"
+            className="w-8 h-8 rounded-lg overflow-hidden shrink-0"
             style={{ boxShadow: '0 0 16px rgba(99,102,241,0.35)' }}
           >
-            D
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" width="32" height="32">
+              <defs>
+                <linearGradient id="tbg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+                  <stop stopColor="#4f46e5"/><stop offset="1" stopColor="#7c3aed"/>
+                </linearGradient>
+                <radialGradient id="tglow" cx="30%" cy="25%" r="60%">
+                  <stop offset="0%" stopColor="#818cf8" stopOpacity="0.4"/>
+                  <stop offset="100%" stopColor="#4f46e5" stopOpacity="0"/>
+                </radialGradient>
+              </defs>
+              <rect width="64" height="64" rx="16" fill="url(#tbg)"/>
+              <rect width="64" height="64" rx="16" fill="url(#tglow)"/>
+              <path d="M14 32 L22 23 M14 32 L22 41" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.55"/>
+              <path d="M50 32 L42 23 M50 32 L42 41" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.55"/>
+              <path d="M22 32 L28.5 39.5 L42 24" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </div>
           <span className="hidden sm:block">DevReady</span>
-        </div>
+        </button>
 
         {/* Progress bar — only meaningful for logged-in users */}
         {!isGuest && (
@@ -126,11 +144,18 @@ export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest,
                 {initials}
               </button>
               {/* Dropdown */}
-              <div className="absolute right-0 top-10 w-44 bg-panel border border-border rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-50">
+              <div className="absolute right-0 top-10 w-48 bg-panel border border-border rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-50">
                 <div className="px-3 py-2.5 border-b border-border">
                   <p className="text-xs font-semibold text-bright truncate">{displayName}</p>
                   <p className="text-[10px] text-muted truncate">{user?.email}</p>
                 </div>
+                <button
+                  onClick={onSettingsOpen}
+                  className="w-full text-left px-3 py-2 text-xs text-muted hover:text-primary hover:bg-hover transition-colors cursor-pointer flex items-center gap-2"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="2" stroke="currentColor" strokeWidth="1.2"/><path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M2.5 9.5l.7-.7M8.8 3.2l.7-.7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                  Settings
+                </button>
                 <button
                   onClick={onSignOut}
                   className="w-full text-left px-3 py-2 text-xs text-muted hover:text-danger hover:bg-danger/5 transition-colors cursor-pointer rounded-b-xl"
