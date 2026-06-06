@@ -1,4 +1,4 @@
-export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut }) {
+export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut, onSearchOpen }) {
   console.log("[TopBar] isGuest:", isGuest, "user:", user?.id ?? "none");
   const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
 
@@ -56,6 +56,20 @@ export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest,
 
         {/* Spacer for guests */}
         {isGuest && <div className="flex-1" />}
+
+        {/* Search trigger */}
+        <button
+          onClick={onSearchOpen}
+          className="hidden sm:flex items-center gap-2 h-8 px-3 rounded-lg border border-border text-ghost hover:text-muted hover:border-subtle text-xs transition-colors cursor-pointer"
+          title="Search (Ctrl+K / ⌘K)"
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1.3"/>
+            <path d="M8 8L11 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+          </svg>
+          <span>Search</span>
+          <kbd className="font-mono text-[10px] px-1 rounded bg-hover border border-border ml-1">⌘K</kbd>
+        </button>
 
         {/* Right section */}
         <div className="flex items-center gap-3">

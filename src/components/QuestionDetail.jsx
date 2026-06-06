@@ -1,7 +1,8 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { renderMarkdown } from "../utils/markdown";
 import Badge from "./ui/Badge";
 import Spinner from "./ui/Spinner";
+import { useNotes } from "../hooks/useNotes";
 
 // Guests can freely read the first N questions in any section
 export const GUEST_FREE_LIMIT = 3;
@@ -31,7 +32,7 @@ function estimateReadTime(html) {
 }
 
 /* Gate shown when a guest tries to open a locked question */
-function GuestGate({ questionText, onSignIn, onSignUp }) {
+function GuestGate({ onSignIn, onSignUp }) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 text-center">
       <div
@@ -71,6 +72,45 @@ function GuestGate({ questionText, onSignIn, onSignUp }) {
   );
 }
 
+/* Notes panel */
+function NotesPanel({ user, questionId, isGuest, onOpenAuth }) {
+  const { note, saving, saved, saveNote } = useNotes(user, questionId);
+
+  if (isGuest) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full px-6 text-center py-8">
+        <div className="text-2xl mb-3">📝</div>
+        <p className="text-sm font-semibold text-soft mb-1">Notes are saved to your account</p>
+        <p className="text-xs text-muted mb-4 leading-relaxed">Sign in to write and sync personal notes for each question.</p>
+        <button
+          onClick={() => onOpenAuth("signup")}
+          className="h-8 px-4 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold transition-colors cursor-pointer"
+        >
+          Sign In to Add Notes
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full p-4 gap-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-soft">My Notes</p>
+        <span className="text-[10px] text-ghost">
+          {saving ? "Saving…" : saved ? "Saved ✓" : ""}
+        </span>
+      </div>
+      <textarea
+        className="flex-1 w-full bg-hover border border-border rounded-lg p-3 text-sm text-primary resize-none outline-none focus:border-accent/60 placeholder-ghost transition-colors"
+        placeholder="Write your notes here… (auto-saved)"
+        value={note}
+        onChange={(e) => saveNote(e.target.value)}
+      />
+      <p className="text-[10px] text-ghost">Notes are private and auto-saved as you type.</p>
+    </div>
+  );
+}
+
 export default function QuestionDetail({
   activeQ,
   activeKey,
@@ -88,12 +128,22 @@ export default function QuestionDetail({
   onJumpTo,
   isGuest,
   onOpenAuth,
+  user,
 }) {
   const answerRef = useRef(null);
+  const [tab, setTab] = useState("answer"); // "answer" | "notes"
+  const [interviewMode, setInterviewMode] = useState(false);
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
     if (answerRef.current) answerRef.current.scrollTop = 0;
+    setRevealed(false); // hide answer when switching question in interview mode
   }, [activeQ?.id]);
+
+  // Reset interview mode reveal when toggling the mode on
+  useEffect(() => {
+    if (interviewMode) setRevealed(false);
+  }, [interviewMode]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -101,10 +151,12 @@ export default function QuestionDetail({
       if (e.key === "ArrowLeft"  || e.key === "p") onPrev();
       if (e.key === "ArrowRight" || e.key === "n") onNext();
       if (e.key === "Escape") onBack();
+      if ((e.key === "i" || e.key === "I") && !e.ctrlKey && !e.metaKey) setInterviewMode((v) => !v);
+      if (e.key === " " && interviewMode && !isLocked) { e.preventDefault(); setRevealed((v) => !v); }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onPrev, onNext, onBack]);
+  }, [onPrev, onNext, onBack, interviewMode]);
 
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < totalCount - 1;
@@ -130,7 +182,7 @@ export default function QuestionDetail({
       {/* ── Question Header ─────────────────────────────── */}
       <div className="shrink-0 bg-panel border-b border-border px-5 py-4">
 
-        {/* Top row: breadcrumb + status + back */}
+        {/* Top row: breadcrumb + badges + back */}
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <span className="text-[11px] text-ghost">{activeQ.topic_label}</span>
           <span className="text-[11px] text-ghost">›</span>
@@ -138,6 +190,19 @@ export default function QuestionDetail({
 
           <div className="flex items-center gap-2 ml-auto">
             <Badge level={activeQ.difficulty} />
+
+            {/* Interview mode toggle */}
+            <button
+              className={`flex items-center gap-1 h-7 px-2.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
+                interviewMode
+                  ? "bg-accent/15 border border-accent/50 text-accent"
+                  : "border border-border text-ghost hover:text-muted hover:border-subtle"
+              }`}
+              onClick={() => setInterviewMode((v) => !v)}
+              title="Toggle Interview Mode (I)"
+            >
+              🎯 Interview
+            </button>
 
             {/* Status pill — disabled visually when locked */}
             <button
@@ -168,8 +233,8 @@ export default function QuestionDetail({
           {activeQ.text}
         </h1>
 
-        {/* Meta row */}
-        <div className="flex items-center gap-3 text-[11px] text-muted">
+        {/* Meta row + tabs */}
+        <div className="flex items-center gap-3 text-[11px] text-muted flex-wrap">
           <span className="tabular-nums">Q{currentIndex + 1} of {totalCount}</span>
           {!isLocked && readTime && (
             <>
@@ -185,22 +250,47 @@ export default function QuestionDetail({
               </span>
             </>
           )}
+
+          {/* Tab switcher */}
+          {!isLocked && (
+            <div className="ml-auto flex items-center gap-0.5 bg-hover rounded-lg p-0.5">
+              <button
+                className={`h-6 px-3 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                  tab === "answer" ? "bg-panel text-primary shadow-sm" : "text-ghost hover:text-muted"
+                }`}
+                onClick={() => setTab("answer")}
+              >
+                Answer
+              </button>
+              <button
+                className={`h-6 px-3 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                  tab === "notes" ? "bg-panel text-primary shadow-sm" : "text-ghost hover:text-muted"
+                }`}
+                onClick={() => setTab("notes")}
+              >
+                Notes
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Answer Panel ────────────────────────────────── */}
+      {/* ── Answer / Notes Panel ─────────────────────────── */}
       <div
         ref={answerRef}
-        className="flex-1 overflow-y-auto px-6 py-8 bg-surface"
+        className="flex-1 overflow-y-auto bg-surface"
       >
         {isLocked ? (
-          <GuestGate
-            questionText={activeQ.text}
-            onSignIn={() => onOpenAuth("signin")}
-            onSignUp={() => onOpenAuth("signup")}
-          />
+          <div className="h-full px-6 py-8">
+            <GuestGate
+              onSignIn={() => onOpenAuth("signin")}
+              onSignUp={() => onOpenAuth("signup")}
+            />
+          </div>
+        ) : tab === "notes" ? (
+          <NotesPanel user={user} questionId={activeQ?.id} isGuest={isGuest} onOpenAuth={onOpenAuth} />
         ) : (
-          <>
+          <div className="px-6 py-8">
             {error && (
               <div className="max-w-lg mx-auto bg-danger/10 border border-danger/30 rounded-lg p-4 text-danger text-sm">
                 ⚠ {error}
@@ -226,12 +316,51 @@ export default function QuestionDetail({
             )}
 
             {!loading && answer && (
-              <div
-                className="prose-answer"
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }}
-              />
+              <>
+                {/* Interview mode — hide/reveal */}
+                {interviewMode && !revealed ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div
+                      className="w-20 h-20 rounded-2xl flex items-center justify-center mb-6 text-3xl"
+                      style={{ background: 'rgba(99,102,241,0.10)', border: '1px solid rgba(99,102,241,0.2)' }}
+                    >
+                      🎯
+                    </div>
+                    <h3 className="text-lg font-semibold text-heading mb-2">Interview Mode</h3>
+                    <p className="text-sm text-muted max-w-sm leading-relaxed mb-8">
+                      Think through your answer first, then reveal the solution.
+                    </p>
+                    <button
+                      onClick={() => setRevealed(true)}
+                      className="h-11 px-8 rounded-lg bg-accent hover:bg-accent-hover text-white font-semibold text-sm transition-all cursor-pointer"
+                      style={{ boxShadow: '0 0 16px rgba(99,102,241,0.3)' }}
+                    >
+                      Reveal Answer
+                    </button>
+                    <p className="text-xs text-ghost mt-4">Press <kbd className="font-mono px-1 py-0.5 rounded bg-hover border border-border">Space</kbd> to reveal</p>
+                  </div>
+                ) : (
+                  <>
+                    {interviewMode && revealed && (
+                      <div className="flex items-center justify-between mb-4 p-3 bg-success/5 border border-success/20 rounded-lg">
+                        <span className="text-xs text-success font-medium">✓ Answer revealed</span>
+                        <button
+                          className="text-xs text-ghost hover:text-muted cursor-pointer"
+                          onClick={() => setRevealed(false)}
+                        >
+                          Hide again
+                        </button>
+                      </div>
+                    )}
+                    <div
+                      className="prose-answer"
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }}
+                    />
+                  </>
+                )}
+              </>
             )}
-          </>
+          </div>
         )}
       </div>
 

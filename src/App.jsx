@@ -13,6 +13,7 @@ import QuestionDetail from "./components/QuestionDetail";
 import LandingPage from "./pages/LandingPage";
 import AuthModal from "./components/AuthModal";
 import Toast from "./components/Toast";
+import GlobalSearch from "./components/GlobalSearch";
 
 /* ── Simple view router ──────────────────────────────────────────── */
 function useRoute(user, isLoading) {
@@ -47,6 +48,7 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   const [activeQ, setActiveQ] = useState(null);
   const [expanded, setExpanded] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const [sectionQuestions, setSectionQuestions] = useState([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -55,6 +57,18 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   // Pass user into useStatuses so it knows whether to use cloud or localStorage
   const { statuses, saveStatus } = useStatuses(user);
   const { cached, answer, loading: answerLoading, error: answerError, loadAnswer, clearAnswer } = useAnswerCache();
+
+  // Global search keyboard shortcut
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const { streak, recordActivity } = useStreak();
   const { weekDone, weekGoal, recordWeekActivity } = useWeeklyGoal();
@@ -174,6 +188,43 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
     if (q) openQuestion(activeSection, q);
   };
 
+  const handleSearchSelect = useCallback(async (item) => {
+    // item has section_id from the search query. Navigate to the right section/topic.
+    const sectionId = item.section_id;
+    if (!sectionId) return;
+
+    // Find if we already have the section loaded
+    let foundTopic = null;
+    let foundSection = null;
+
+    for (const [topicId, sections] of Object.entries(topicSections)) {
+      const sec = sections.find((s) => s.id === sectionId);
+      if (sec) {
+        foundSection = sec;
+        foundTopic = topics.find((t) => t.id === Number(topicId));
+        break;
+      }
+    }
+
+    if (!foundSection) {
+      // Need to load sections for the topic from the item's nested data
+      const topicId = item.sections?.topic_id;
+      if (topicId) {
+        const sections = await fetchSections(topicId);
+        setTopicSections((prev) => ({ ...prev, [topicId]: sections }));
+        foundSection = sections.find((s) => s.id === sectionId);
+        foundTopic = topics.find((t) => t.id === topicId);
+      }
+    }
+
+    if (foundSection) {
+      if (foundTopic) { setActiveTopic(foundTopic); setExpanded((prev) => ({ ...prev, [foundTopic.id]: true })); }
+      setActiveSection(foundSection);
+      // Build a minimal question object for openQuestion
+      openQuestion(foundSection, { id: item.id, text: item.text, difficulty_levels: { label: "Basic" }, difficulty_id: item.difficulty_id });
+    }
+  }, [topics, topicSections, openQuestion]);
+
   const handleTopicClick = async (topic) => {
     setExpanded((prev) => ({ ...prev, [topic.id]: !prev[topic.id] }));
     setActiveTopic(topic);
@@ -208,6 +259,7 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
         user={user}
         isGuest={isGuest}
         onMenuClick={() => setSidebarOpen(true)}
+        onSearchOpen={() => setSearchOpen(true)}
         onSignIn={() => onOpenAuth("signin")}
         onSignOut={onSignOut}
       />
@@ -263,6 +315,7 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
               onJumpTo={handleJumpTo}
               isGuest={isGuest}
               onOpenAuth={onOpenAuth}
+              user={user}
             />
           ) : (
             <QuestionList
@@ -284,6 +337,15 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
           message={toast.message}
           sub={toast.sub}
           onDismiss={() => setToast(null)}
+        />
+      )}
+
+      {searchOpen && (
+        <GlobalSearch
+          onSelectQuestion={handleSearchSelect}
+          onClose={() => setSearchOpen(false)}
+          isGuest={isGuest}
+          onOpenAuth={onOpenAuth}
         />
       )}
     </div>
