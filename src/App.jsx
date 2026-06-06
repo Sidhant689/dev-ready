@@ -1,32 +1,70 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useAuth } from "./hooks/useAuth";
 import { useStatuses } from "./hooks/useStatuses";
 import { useAnswerCache } from "./hooks/useAnswerCache";
+import { useStreak } from "./hooks/useStreak";
+import { useWeeklyGoal } from "./hooks/useWeeklyGoal";
 import { qKey } from "./utils/helpers";
 import { fetchTopics, fetchSections, fetchQuestions } from "./services/questionService";
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
 import QuestionList from "./components/QuestionList";
 import QuestionDetail from "./components/QuestionDetail";
+import LandingPage from "./pages/LandingPage";
+import AuthModal from "./components/AuthModal";
+import Toast from "./components/Toast";
 
-export default function App() {
+/* ── Simple view router ──────────────────────────────────────────── */
+function useRoute(user, isLoading) {
+  const [route, setRoute] = useState(() =>
+    localStorage.getItem("devready_visited") ? "app" : "landing"
+  );
+
+  // When user logs in from any view, move them to app
+  useEffect(() => {
+    if (!isLoading && user) {
+      localStorage.setItem("devready_visited", "1");
+      setRoute("app");
+    }
+  }, [user, isLoading]);
+
+  return {
+    route,
+    goToApp: () => {
+      localStorage.setItem("devready_visited", "1");
+      setRoute("app");
+    },
+    goToLanding: () => setRoute("landing"),
+  };
+}
+
+/* ── Main App shell (shown after entering the app) ───────────────── */
+function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   const [topics, setTopics] = useState([]);
   const [activeTopic, setActiveTopic] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
   const [topicSections, setTopicSections] = useState({});
   const [activeQ, setActiveQ] = useState(null);
   const [expanded, setExpanded] = useState({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Lifted questions state – shared between list and detail views
   const [sectionQuestions, setSectionQuestions] = useState([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
-
-  // question id → topic id mapping, built up as sections are visited
   const [questionMeta, setQuestionMeta] = useState({});
 
-  const { statuses, saveStatus } = useStatuses();
+  // Pass user into useStatuses so it knows whether to use cloud or localStorage
+  const { statuses, saveStatus } = useStatuses(user);
   const { cached, answer, loading: answerLoading, error: answerError, loadAnswer, clearAnswer } = useAnswerCache();
 
-  // Fetch topics on mount
+  const { streak, recordActivity } = useStreak();
+  const { weekDone, weekGoal, recordWeekActivity } = useWeeklyGoal();
+
+  const [toast, setToast] = useState(null);
+  const [celebrated, setCelebrated] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("devready_celebrated") || "[]")); }
+    catch { return new Set(); }
+  });
+
   useEffect(() => {
     fetchTopics()
       .then((data) => {
@@ -43,7 +81,6 @@ export default function App() {
       .catch(console.error);
   }, []);
 
-  // Fetch questions whenever active section changes
   useEffect(() => {
     if (!activeSection) { setSectionQuestions([]); return; }
     setQuestionsLoading(true);
@@ -52,7 +89,6 @@ export default function App() {
       .catch(() => setQuestionsLoading(false));
   }, [activeSection?.id]);
 
-  // Track which topic each question belongs to (for per-topic progress)
   useEffect(() => {
     if (!activeTopic || !sectionQuestions.length) return;
     const updates = Object.fromEntries(sectionQuestions.map((q) => [q.id, activeTopic.id]));
@@ -69,7 +105,6 @@ export default function App() {
     [topics]
   );
 
-  // Per-topic done counts derived from localStorage statuses + questionMeta map
   const donePerTopic = useMemo(() => {
     const counts = {};
     Object.entries(statuses).forEach(([key, status]) => {
@@ -81,7 +116,23 @@ export default function App() {
     return counts;
   }, [statuses, questionMeta]);
 
-  // Index of the active question within the current section's list
+  // Topic completion toasts
+  useEffect(() => {
+    topics.forEach((topic) => {
+      const done = donePerTopic[topic.id] || 0;
+      const total = topic.total_count || 0;
+      if (total > 0 && done === total && !celebrated.has(topic.id)) {
+        setCelebrated((prev) => {
+          const next = new Set(prev);
+          next.add(topic.id);
+          localStorage.setItem("devready_celebrated", JSON.stringify([...next]));
+          return next;
+        });
+        setToast({ message: `${topic.label} complete!`, sub: `You finished all ${total} questions.` });
+      }
+    });
+  }, [donePerTopic, topics, celebrated]);
+
   const activeQIndex = useMemo(() => {
     if (!activeQ) return -1;
     return sectionQuestions.findIndex((q) => q.id === activeQ.id);
@@ -98,18 +149,26 @@ export default function App() {
       topic_label: activeTopic?.label,
     });
     loadAnswer(question.id, k);
+    setSidebarOpen(false);
   }, [activeTopic?.label, loadAnswer]);
 
   const closeQuestion = () => { setActiveQ(null); clearAnswer(); };
 
+  function handleSaveStatus(key, status) {
+    console.log("[handleSaveStatus] key:", key, "status:", status, "user:", user ? user.id : "NO USER");
+    saveStatus(key, status);
+    if (status === "Done") {
+      recordActivity();
+      recordWeekActivity();
+    }
+  }
+
   const handlePrev = () => {
     if (activeQIndex > 0) openQuestion(activeSection, sectionQuestions[activeQIndex - 1]);
   };
-
   const handleNext = () => {
     if (activeQIndex < sectionQuestions.length - 1) openQuestion(activeSection, sectionQuestions[activeQIndex + 1]);
   };
-
   const handleJumpTo = (idx) => {
     const q = sectionQuestions[Number(idx)];
     if (q) openQuestion(activeSection, q);
@@ -119,15 +178,12 @@ export default function App() {
     setExpanded((prev) => ({ ...prev, [topic.id]: !prev[topic.id] }));
     setActiveTopic(topic);
     closeQuestion();
-
     if (!topicSections[topic.id]) {
       try {
         const sections = await fetchSections(topic.id);
         setTopicSections((prev) => ({ ...prev, [topic.id]: sections }));
         if (sections.length > 0) setActiveSection(sections[0]);
-      } catch (err) {
-        console.error(err);
-      }
+      } catch (err) { console.error(err); }
     } else if (topicSections[topic.id].length > 0) {
       setActiveSection(topicSections[topic.id][0]);
     }
@@ -137,6 +193,7 @@ export default function App() {
     setActiveTopic(topic);
     setActiveSection(section);
     closeQuestion();
+    setSidebarOpen(false);
   };
 
   const activeKey = activeQ ? qKey(activeQ.id) : null;
@@ -147,20 +204,45 @@ export default function App() {
       <TopBar
         totalDone={totalDone}
         totalAll={totalAll}
-        cachedCount={Object.keys(cached).length}
+        streak={streak}
+        user={user}
+        isGuest={isGuest}
+        onMenuClick={() => setSidebarOpen(true)}
+        onSignIn={() => onOpenAuth("signin")}
+        onSignOut={onSignOut}
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          topics={topics}
-          topicSections={topicSections}
-          activeTopic={activeTopic}
-          activeSection={activeSection}
-          expanded={expanded}
-          donePerTopic={donePerTopic}
-          onTopicClick={handleTopicClick}
-          onSectionClick={handleSectionClick}
-        />
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile overlay */}
+        {sidebarOpen && (
+          <div
+            className="absolute inset-0 z-10 bg-black/50 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        {/* Sidebar */}
+        <div
+          className={`
+            absolute z-20 inset-y-0 left-0 transform transition-transform duration-300
+            md:relative md:translate-x-0 md:z-auto
+            ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
+          `}
+        >
+          <Sidebar
+            topics={topics}
+            topicSections={topicSections}
+            activeTopic={activeTopic}
+            activeSection={activeSection}
+            expanded={expanded}
+            donePerTopic={donePerTopic}
+            streak={streak}
+            weekDone={weekDone}
+            weekGoal={weekGoal}
+            onTopicClick={handleTopicClick}
+            onSectionClick={handleSectionClick}
+          />
+        </div>
 
         <main className="flex-1 flex flex-col overflow-hidden">
           {activeQ ? (
@@ -175,10 +257,12 @@ export default function App() {
               totalCount={sectionQuestions.length}
               sectionQuestions={sectionQuestions}
               onBack={closeQuestion}
-              onSaveStatus={saveStatus}
+              onSaveStatus={handleSaveStatus}
               onPrev={handlePrev}
               onNext={handleNext}
               onJumpTo={handleJumpTo}
+              isGuest={isGuest}
+              onOpenAuth={onOpenAuth}
             />
           ) : (
             <QuestionList
@@ -188,10 +272,75 @@ export default function App() {
               statuses={statuses}
               cached={cached}
               onOpenQuestion={openQuestion}
+              isGuest={isGuest}
+              onOpenAuth={onOpenAuth}
             />
           )}
         </main>
       </div>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          sub={toast.sub}
+          onDismiss={() => setToast(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── Root ────────────────────────────────────────────────────────── */
+export default function App() {
+  const { user, isLoading, isGuest, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithGitHub, signOut } = useAuth();
+  const { route, goToApp, goToLanding } = useRoute(user, isLoading);
+  const [authModal, setAuthModal] = useState(null); // null | "signin" | "signup"
+
+  function openAuth(mode) { setAuthModal(mode); }
+  function closeAuth() { setAuthModal(null); }
+
+  async function handleAuthSuccess() {
+    closeAuth();
+    // useRoute's useEffect will detect user change and navigate to app
+  }
+
+  // Still waiting for Supabase session
+  if (isLoading) {
+    return (
+      <div className="h-full bg-surface flex items-center justify-center">
+        <div className="w-6 h-6 rounded-full border-2 border-border border-t-accent"
+             style={{ animation: 'spin 0.8s linear infinite' }} />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {route === "landing" ? (
+        <LandingPage
+          onGetStarted={() => goToApp()}
+          onSignIn={() => openAuth("signin")}
+        />
+      ) : (
+        <AppShell
+          user={user}
+          isGuest={isGuest}
+          onOpenAuth={openAuth}
+          onSignOut={signOut}
+        />
+      )}
+
+      {authModal && (
+        <AuthModal
+          mode={authModal}
+          onClose={closeAuth}
+          onSuccess={handleAuthSuccess}
+          signInWithEmail={signInWithEmail}
+          signUpWithEmail={signUpWithEmail}
+          signInWithGoogle={signInWithGoogle}
+          signInWithGitHub={signInWithGitHub}
+        />
+      )}
+    </>
   );
 }
