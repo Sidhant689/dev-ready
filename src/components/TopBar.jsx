@@ -1,5 +1,4 @@
-export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut, onSearchOpen }) {
-  console.log("[TopBar] isGuest:", isGuest, "user:", user?.id ?? "none");
+export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut, onSearchOpen, theme, onToggleTheme }) {
   const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
 
   // Derive display name / initials from user metadata
@@ -90,6 +89,24 @@ export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest,
               🔥 {streak}d
             </span>
           )}
+
+          {/* Theme toggle */}
+          <button
+            onClick={onToggleTheme}
+            className="w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-hover transition-colors cursor-pointer"
+            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? (
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                <circle cx="7.5" cy="7.5" r="3" stroke="currentColor" strokeWidth="1.3"/>
+                <path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M2.9 2.9l1.06 1.06M11.04 11.04l1.06 1.06M2.9 12.1l1.06-1.06M11.04 3.96l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M12.5 8.5A5.5 5.5 0 0 1 5.5 1.5a5.5 5.5 0 1 0 7 7z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </button>
 
           {/* Auth: guest → Sign In button | user → avatar */}
           {isGuest ? (

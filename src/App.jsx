@@ -4,12 +4,15 @@ import { useStatuses } from "./hooks/useStatuses";
 import { useAnswerCache } from "./hooks/useAnswerCache";
 import { useStreak } from "./hooks/useStreak";
 import { useWeeklyGoal } from "./hooks/useWeeklyGoal";
+import { useBookmarks } from "./hooks/useBookmarks";
+import { useTheme } from "./hooks/useTheme";
 import { qKey } from "./utils/helpers";
 import { fetchTopics, fetchSections, fetchQuestions } from "./services/questionService";
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
 import QuestionList from "./components/QuestionList";
 import QuestionDetail from "./components/QuestionDetail";
+import Dashboard from "./pages/Dashboard";
 import LandingPage from "./pages/LandingPage";
 import AuthModal from "./components/AuthModal";
 import Toast from "./components/Toast";
@@ -40,7 +43,7 @@ function useRoute(user, isLoading) {
 }
 
 /* ── Main App shell (shown after entering the app) ───────────────── */
-function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
+function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }) {
   const [topics, setTopics] = useState([]);
   const [activeTopic, setActiveTopic] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
@@ -54,8 +57,8 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionMeta, setQuestionMeta] = useState({});
 
-  // Pass user into useStatuses so it knows whether to use cloud or localStorage
   const { statuses, saveStatus } = useStatuses(user);
+  const { bookmarks, isBookmarked, toggleBookmark } = useBookmarks(user);
   const { cached, answer, loading: answerLoading, error: answerError, loadAnswer, clearAnswer } = useAnswerCache();
 
   // Global search keyboard shortcut
@@ -154,16 +157,27 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
 
   const openQuestion = useCallback((section, question) => {
     const k = qKey(question.id);
-    setActiveQ({
+    const qObj = {
       id: question.id,
       text: question.text,
       difficulty: question.difficulty_levels?.label || "Basic",
       difficulty_id: question.difficulty_id,
       section_label: section.label,
       topic_label: activeTopic?.label,
-    });
+    };
+    setActiveQ(qObj);
     loadAnswer(question.id, k);
     setSidebarOpen(false);
+    // Save last visited for Dashboard "continue" widget
+    try {
+      localStorage.setItem("devready_last_q", JSON.stringify({
+        questionId: question.id,
+        questionText: question.text,
+        sectionId: section.id,
+        sectionLabel: section.label,
+        topicLabel: activeTopic?.label || "",
+      }));
+    } catch { /* ignore */ }
   }, [activeTopic?.label, loadAnswer]);
 
   const closeQuestion = () => { setActiveQ(null); clearAnswer(); };
@@ -250,6 +264,39 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   const activeKey = activeQ ? qKey(activeQ.id) : null;
   const activeStatus = activeKey ? statuses[activeKey] ?? "To Do" : "To Do";
 
+  // Navigate to a question from bookmark/dashboard (has sectionId stored)
+  const handleBookmarkNav = useCallback(async (item) => {
+    const sectionId = item.sectionId || item.section_id;
+    if (!sectionId) return;
+
+    let foundSection = null;
+    let foundTopic = null;
+
+    for (const [topicId, sections] of Object.entries(topicSections)) {
+      const sec = sections.find((s) => s.id === sectionId);
+      if (sec) { foundSection = sec; foundTopic = topics.find((t) => t.id === Number(topicId)); break; }
+    }
+
+    if (!foundSection) {
+      // Try every topic's sections (load on demand)
+      for (const topic of topics) {
+        if (topicSections[topic.id]) continue;
+        const sections = await fetchSections(topic.id);
+        setTopicSections((prev) => ({ ...prev, [topic.id]: sections }));
+        const sec = sections.find((s) => s.id === sectionId);
+        if (sec) { foundSection = sec; foundTopic = topic; break; }
+      }
+    }
+
+    if (foundSection) {
+      if (foundTopic) { setActiveTopic(foundTopic); setExpanded((prev) => ({ ...prev, [foundTopic.id]: true })); }
+      setActiveSection(foundSection);
+      const qId = item.questionId || item.question_id;
+      const qText = item.questionText || item.question_text || "";
+      openQuestion(foundSection, { id: qId, text: qText, difficulty_levels: { label: "Basic" } });
+    }
+  }, [topics, topicSections, openQuestion]);
+
   return (
     <div className="flex flex-col h-full bg-surface text-bright font-sans">
       <TopBar
@@ -262,6 +309,8 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
         onSearchOpen={() => setSearchOpen(true)}
         onSignIn={() => onOpenAuth("signin")}
         onSignOut={onSignOut}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -291,8 +340,11 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
             streak={streak}
             weekDone={weekDone}
             weekGoal={weekGoal}
+            bookmarks={bookmarks}
             onTopicClick={handleTopicClick}
             onSectionClick={handleSectionClick}
+            onBookmarkClick={handleBookmarkNav}
+            onHomeClick={() => { closeQuestion(); setActiveSection(null); setSidebarOpen(false); }}
           />
         </div>
 
@@ -316,8 +368,10 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
               isGuest={isGuest}
               onOpenAuth={onOpenAuth}
               user={user}
+              isBookmarked={isBookmarked(activeQ.id)}
+              onToggleBookmark={toggleBookmark}
             />
-          ) : (
+          ) : activeSection ? (
             <QuestionList
               activeSection={activeSection}
               questions={sectionQuestions}
@@ -328,6 +382,32 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
               isGuest={isGuest}
               onOpenAuth={onOpenAuth}
             />
+          ) : (
+            !isGuest ? (
+              <Dashboard
+                user={user}
+                topics={topics}
+                donePerTopic={donePerTopic}
+                totalDone={totalDone}
+                totalAll={totalAll}
+                streak={streak}
+                weekDone={weekDone}
+                weekGoal={weekGoal}
+                bookmarks={bookmarks}
+                onSelectTopic={handleTopicClick}
+                onSelectBookmark={handleBookmarkNav}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-center px-8">
+                <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-4 text-2xl">
+                  👈
+                </div>
+                <p className="text-base font-semibold text-soft mb-1">Select a topic to begin</p>
+                <p className="text-sm text-muted max-w-xs">
+                  Choose any topic from the sidebar to see questions and start your preparation.
+                </p>
+              </div>
+            )
           )}
         </main>
       </div>
@@ -356,6 +436,7 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
 export default function App() {
   const { user, isLoading, isGuest, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithGitHub, signOut } = useAuth();
   const { route, goToApp, goToLanding } = useRoute(user, isLoading);
+  const { theme, toggleTheme } = useTheme();
   const [authModal, setAuthModal] = useState(null); // null | "signin" | "signup"
 
   function openAuth(mode) { setAuthModal(mode); }
@@ -389,6 +470,8 @@ export default function App() {
           isGuest={isGuest}
           onOpenAuth={openAuth}
           onSignOut={signOut}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       )}
 

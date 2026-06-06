@@ -129,6 +129,8 @@ export default function QuestionDetail({
   isGuest,
   onOpenAuth,
   user,
+  isBookmarked,
+  onToggleBookmark,
 }) {
   const answerRef = useRef(null);
   const [tab, setTab] = useState("answer"); // "answer" | "notes"
@@ -217,6 +219,25 @@ export default function QuestionDetail({
               <span>{isLocked ? "🔒" : statusStyle.icon}</span>
               <span>{isLocked ? "Locked" : activeStatus}</span>
             </button>
+
+            {/* Bookmark */}
+            {!isLocked && (
+              <button
+                className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors cursor-pointer ${
+                  isBookmarked
+                    ? "text-warning hover:text-warning/70"
+                    : "text-ghost hover:text-warning"
+                }`}
+                onClick={() => onToggleBookmark?.(activeQ.id, {
+                  text: activeQ.text,
+                  section_label: activeQ.section_label,
+                  topic_label: activeQ.topic_label,
+                })}
+                title={isBookmarked ? "Remove bookmark" : "Bookmark this question"}
+              >
+                {isBookmarked ? "★" : "☆"}
+              </button>
+            )}
 
             <button
               className="text-xs text-muted hover:text-primary transition-colors cursor-pointer ml-1"
