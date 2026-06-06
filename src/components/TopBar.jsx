@@ -1,42 +1,42 @@
 export default function TopBar({ totalDone, totalAll, cachedCount }) {
-  return (
-    <header
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "0 16px",
-        height: 48,
-        background: "#0f1117",
-        borderBottom: "1px solid #1e293b",
-        flexShrink: 0,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600 }}>
-        <div
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: 6,
-            background: "#6366f1",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 14,
-          }}
-        >
-          🎯
-        </div>
-        DevReady
-      </div>
+  const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
 
-      <div style={{ marginLeft: "auto", display: "flex", gap: 16 }}>
-        <span style={{ fontSize: 12, color: "#64748b" }}>
-          ✓ {totalDone} / {totalAll} done
-        </span>
-        <span style={{ fontSize: 12, color: "#64748b" }}>
-          ⚡ {cachedCount} cached locally
-        </span>
+  return (
+    <header className="shrink-0 bg-panel border-b border-border">
+      <div className="flex items-center gap-3 px-4 h-12">
+        {/* Logo */}
+        <div className="flex items-center gap-2 text-sm font-semibold text-bright">
+          <div className="w-7 h-7 rounded-md bg-accent flex items-center justify-center text-sm">
+            🎯
+          </div>
+          DevReady
+        </div>
+
+        {/* Progress bar */}
+        <div className="flex-1 flex items-center gap-3 ml-4">
+          <div className="flex-1 h-1.5 bg-hover rounded-full overflow-hidden">
+            <div
+              className="h-full bg-accent rounded-full transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className="text-xs text-subtle whitespace-nowrap">
+            {pct}%
+          </span>
+        </div>
+
+        {/* Stats */}
+        <div className="flex items-center gap-4 ml-2">
+          <span className="text-xs text-subtle">
+            <span className="text-green-500 font-medium">✓</span>{" "}
+            {totalDone} <span className="text-muted">/ {totalAll}</span>
+          </span>
+          {cachedCount > 0 && (
+            <span className="text-xs text-subtle">
+              <span className="text-green-400">⚡</span> {cachedCount} cached
+            </span>
+          )}
+        </div>
       </div>
     </header>
   );

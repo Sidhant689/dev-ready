@@ -1,15 +1,8 @@
 export default function Badge({ level, bgColor = "#1e293b", textColor = "#94a3b8" }) {
   return (
     <span
-      style={{
-        flexShrink: 0,
-        fontSize: 10,
-        padding: "2px 6px",
-        borderRadius: 100,
-        fontWeight: 500,
-        background: bgColor,
-        color: textColor,
-      }}
+      className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+      style={{ background: bgColor, color: textColor }}
     >
       {level}
     </span>

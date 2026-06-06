@@ -1,27 +1,11 @@
 export default function Spinner() {
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        height: "100%",
-        gap: 12,
-        color: "#64748b",
-      }}
-    >
+    <div className="flex flex-col items-center justify-center h-full gap-3 text-subtle">
       <div
-        style={{
-          width: 28,
-          height: 28,
-          border: "2px solid #1e293b",
-          borderTop: "2px solid #6366f1",
-          borderRadius: "50%",
-          animation: "spin 0.8s linear infinite",
-        }}
+        className="w-7 h-7 rounded-full border-2 border-hover border-t-accent"
+        style={{ animation: "spin 0.8s linear infinite" }}
       />
-      <span style={{ fontSize: 13 }}>Loading answer…</span>
+      <span className="text-xs">Loading answer…</span>
     </div>
   );
 }
