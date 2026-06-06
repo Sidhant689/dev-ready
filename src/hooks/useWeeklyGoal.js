@@ -1,23 +1,31 @@
 import { useState, useCallback } from "react";
 
-const WEEK_GOAL = 20; // target questions per week
+const DEFAULT_GOAL = 20;
+const GOAL_KEY = "devready_week_goal";
 
 function getWeekStart() {
   const d = new Date();
-  const day = d.getDay(); // 0 = Sunday
+  const day = d.getDay();
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - day);
   return d.toISOString().slice(0, 10);
 }
 
+export function getSavedGoal() {
+  return parseInt(localStorage.getItem(GOAL_KEY) || String(DEFAULT_GOAL), 10);
+}
+
+export function saveGoal(n) {
+  localStorage.setItem(GOAL_KEY, String(n));
+}
+
 export function useWeeklyGoal() {
   const [state, setState] = useState(() => {
+    const goal = getSavedGoal();
     const stored = JSON.parse(localStorage.getItem("devready_week") || "null");
     const currentWeek = getWeekStart();
-    if (stored && stored.week === currentWeek) {
-      return { weekDone: stored.done, weekGoal: WEEK_GOAL };
-    }
-    return { weekDone: 0, weekGoal: WEEK_GOAL };
+    const weekDone = stored?.week === currentWeek ? stored.done : 0;
+    return { weekDone, weekGoal: goal };
   });
 
   const recordWeekActivity = useCallback(() => {
@@ -26,8 +34,13 @@ export function useWeeklyGoal() {
     const prevDone = stored?.week === currentWeek ? stored.done : 0;
     const newDone = prevDone + 1;
     localStorage.setItem("devready_week", JSON.stringify({ week: currentWeek, done: newDone }));
-    setState({ weekDone: newDone, weekGoal: WEEK_GOAL });
+    setState((prev) => ({ ...prev, weekDone: newDone }));
   }, []);
 
-  return { ...state, recordWeekActivity };
+  const setWeekGoal = useCallback((n) => {
+    saveGoal(n);
+    setState((prev) => ({ ...prev, weekGoal: n }));
+  }, []);
+
+  return { ...state, recordWeekActivity, setWeekGoal };
 }

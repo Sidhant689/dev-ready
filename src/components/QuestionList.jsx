@@ -30,11 +30,13 @@ function StatusDot({ status }) {
 
 export default function QuestionList({
   activeSection,
+  activeTopic,
   questions,
   loading,
   statuses,
   cached,
   onOpenQuestion,
+  onBack,
   isGuest,
   onOpenAuth,
 }) {
@@ -85,9 +87,26 @@ export default function QuestionList({
       {/* Header */}
       <div className="shrink-0 bg-panel border-b border-border px-4 py-3 space-y-2.5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-bright truncate">
-            {activeSection.label}
-          </h2>
+          <div className="flex items-center gap-2 min-w-0">
+            {onBack && (
+              <button
+                onClick={onBack}
+                className="text-ghost hover:text-muted transition-colors cursor-pointer text-xs shrink-0"
+                title="Back to sections"
+              >
+                ←
+              </button>
+            )}
+            {activeTopic && (
+              <>
+                <span className="text-xs text-ghost truncate hidden sm:block">{activeTopic.label}</span>
+                <span className="text-xs text-ghost hidden sm:block">›</span>
+              </>
+            )}
+            <h2 className="text-sm font-semibold text-bright truncate">
+              {activeSection.label}
+            </h2>
+          </div>
           {questions.length > 0 && (
             <span className="text-xs text-muted tabular-nums whitespace-nowrap shrink-0">
               {doneCount}/{questions.length} done

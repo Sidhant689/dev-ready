@@ -5,7 +5,7 @@ import { useAnswerCache } from "./hooks/useAnswerCache";
 import { useStreak } from "./hooks/useStreak";
 import { useWeeklyGoal } from "./hooks/useWeeklyGoal";
 import { useBookmarks } from "./hooks/useBookmarks";
-import { useTheme } from "./hooks/useTheme";
+import { useUserSettings } from "./hooks/useUserSettings";
 import { qKey } from "./utils/helpers";
 import { fetchTopics, fetchSections, fetchQuestions } from "./services/questionService";
 import TopBar from "./components/TopBar";
@@ -13,10 +13,12 @@ import Sidebar from "./components/Sidebar";
 import QuestionList from "./components/QuestionList";
 import QuestionDetail from "./components/QuestionDetail";
 import Dashboard from "./pages/Dashboard";
+import SectionPicker from "./pages/SectionPicker";
 import LandingPage from "./pages/LandingPage";
 import AuthModal from "./components/AuthModal";
 import Toast from "./components/Toast";
 import GlobalSearch from "./components/GlobalSearch";
+import UserSettings from "./components/UserSettings";
 
 /* ── Simple view router ──────────────────────────────────────────── */
 function useRoute(user, isLoading) {
@@ -43,19 +45,22 @@ function useRoute(user, isLoading) {
 }
 
 /* ── Main App shell (shown after entering the app) ───────────────── */
-function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }) {
+function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   const [topics, setTopics] = useState([]);
   const [activeTopic, setActiveTopic] = useState(null);
   const [activeSection, setActiveSection] = useState(null);
   const [topicSections, setTopicSections] = useState({});
   const [activeQ, setActiveQ] = useState(null);
-  const [expanded, setExpanded] = useState({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const [sectionQuestions, setSectionQuestions] = useState([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionMeta, setQuestionMeta] = useState({});
+
+  const { settings, updateSetting } = useUserSettings(user);
+  const theme = settings.theme;
 
   const { statuses, saveStatus } = useStatuses(user);
   const { bookmarks, isBookmarked, toggleBookmark } = useBookmarks(user);
@@ -74,7 +79,8 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
   }, []);
 
   const { streak, recordActivity } = useStreak();
-  const { weekDone, weekGoal, recordWeekActivity } = useWeeklyGoal();
+  const { weekDone, recordWeekActivity } = useWeeklyGoal();
+  const weekGoal = settings.weekly_goal;
 
   const [toast, setToast] = useState(null);
   const [celebrated, setCelebrated] = useState(() => {
@@ -83,19 +89,7 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
   });
 
   useEffect(() => {
-    fetchTopics()
-      .then((data) => {
-        setTopics(data);
-        if (data.length > 0) {
-          setActiveTopic(data[0]);
-          setExpanded({ [data[0].id]: true });
-          fetchSections(data[0].id).then((sections) => {
-            setTopicSections((prev) => ({ ...prev, [data[0].id]: sections }));
-            if (sections.length > 0) setActiveSection(sections[0]);
-          });
-        }
-      })
-      .catch(console.error);
+    fetchTopics().then(setTopics).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -239,23 +233,14 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
     }
   }, [topics, topicSections, openQuestion]);
 
-  const handleTopicClick = async (topic) => {
-    setExpanded((prev) => ({ ...prev, [topic.id]: !prev[topic.id] }));
+  const handleTopicClick = (topic) => {
     setActiveTopic(topic);
+    setActiveSection(null);
     closeQuestion();
-    if (!topicSections[topic.id]) {
-      try {
-        const sections = await fetchSections(topic.id);
-        setTopicSections((prev) => ({ ...prev, [topic.id]: sections }));
-        if (sections.length > 0) setActiveSection(sections[0]);
-      } catch (err) { console.error(err); }
-    } else if (topicSections[topic.id].length > 0) {
-      setActiveSection(topicSections[topic.id][0]);
-    }
+    setSidebarOpen(false);
   };
 
-  const handleSectionClick = (topic, section) => {
-    setActiveTopic(topic);
+  const handleSectionClick = (section) => {
     setActiveSection(section);
     closeQuestion();
     setSidebarOpen(false);
@@ -305,12 +290,14 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
         streak={streak}
         user={user}
         isGuest={isGuest}
-        onMenuClick={() => setSidebarOpen(true)}
+        onMenuClick={() => setSidebarOpen((v) => !v)}
+        onLogoClick={() => { setActiveTopic(null); setActiveSection(null); closeQuestion(); }}
         onSearchOpen={() => setSearchOpen(true)}
+        onSettingsOpen={() => setSettingsOpen(true)}
         onSignIn={() => onOpenAuth("signin")}
         onSignOut={onSignOut}
         theme={theme}
-        onToggleTheme={onToggleTheme}
+        onToggleTheme={() => updateSetting("theme", theme === "dark" ? "light" : "dark")}
       />
 
       <div className="flex flex-1 overflow-hidden relative">
@@ -332,19 +319,15 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
         >
           <Sidebar
             topics={topics}
-            topicSections={topicSections}
             activeTopic={activeTopic}
-            activeSection={activeSection}
-            expanded={expanded}
             donePerTopic={donePerTopic}
             streak={streak}
             weekDone={weekDone}
             weekGoal={weekGoal}
             bookmarks={bookmarks}
             onTopicClick={handleTopicClick}
-            onSectionClick={handleSectionClick}
+            onHomeClick={() => { setActiveTopic(null); setActiveSection(null); closeQuestion(); setSidebarOpen(false); }}
             onBookmarkClick={handleBookmarkNav}
-            onHomeClick={() => { closeQuestion(); setActiveSection(null); setSidebarOpen(false); }}
           />
         </div>
 
@@ -360,7 +343,7 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
               currentIndex={activeQIndex}
               totalCount={sectionQuestions.length}
               sectionQuestions={sectionQuestions}
-              onBack={closeQuestion}
+              onBack={() => { closeQuestion(); }}
               onSaveStatus={handleSaveStatus}
               onPrev={handlePrev}
               onNext={handleNext}
@@ -374,40 +357,47 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
           ) : activeSection ? (
             <QuestionList
               activeSection={activeSection}
+              activeTopic={activeTopic}
               questions={sectionQuestions}
               loading={questionsLoading}
               statuses={statuses}
               cached={cached}
               onOpenQuestion={openQuestion}
+              onBack={() => setActiveSection(null)}
               isGuest={isGuest}
               onOpenAuth={onOpenAuth}
             />
+          ) : activeTopic ? (
+            <SectionPicker
+              topic={activeTopic}
+              statuses={statuses}
+              questionMeta={questionMeta}
+              onSelectSection={handleSectionClick}
+            />
+          ) : !isGuest ? (
+            <Dashboard
+              user={user}
+              topics={topics}
+              donePerTopic={donePerTopic}
+              totalDone={totalDone}
+              totalAll={totalAll}
+              streak={streak}
+              weekDone={weekDone}
+              weekGoal={weekGoal}
+              bookmarks={bookmarks}
+              onSelectTopic={handleTopicClick}
+              onSelectBookmark={handleBookmarkNav}
+            />
           ) : (
-            !isGuest ? (
-              <Dashboard
-                user={user}
-                topics={topics}
-                donePerTopic={donePerTopic}
-                totalDone={totalDone}
-                totalAll={totalAll}
-                streak={streak}
-                weekDone={weekDone}
-                weekGoal={weekGoal}
-                bookmarks={bookmarks}
-                onSelectTopic={handleTopicClick}
-                onSelectBookmark={handleBookmarkNav}
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-center px-8">
-                <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-4 text-2xl">
-                  👈
-                </div>
-                <p className="text-base font-semibold text-soft mb-1">Select a topic to begin</p>
-                <p className="text-sm text-muted max-w-xs">
-                  Choose any topic from the sidebar to see questions and start your preparation.
-                </p>
+            <div className="flex flex-col items-center justify-center h-full text-center px-8">
+              <div className="w-14 h-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center mb-4 text-2xl">
+                👈
               </div>
-            )
+              <p className="text-base font-semibold text-soft mb-1">Select a topic to begin</p>
+              <p className="text-sm text-muted max-w-xs">
+                Choose any topic from the sidebar to see questions and start your preparation.
+              </p>
+            </div>
           )}
         </main>
       </div>
@@ -428,6 +418,18 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
           onOpenAuth={onOpenAuth}
         />
       )}
+
+      {settingsOpen && !isGuest && (
+        <UserSettings
+          user={user}
+          theme={theme}
+          onToggleTheme={() => updateSetting("theme", theme === "dark" ? "light" : "dark")}
+          weekGoal={weekGoal}
+          onSetWeekGoal={(n) => updateSetting("weekly_goal", n)}
+          onClose={() => setSettingsOpen(false)}
+          onSignOut={onSignOut}
+        />
+      )}
     </div>
   );
 }
@@ -435,9 +437,8 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut, theme, onToggleTheme }
 /* ── Root ────────────────────────────────────────────────────────── */
 export default function App() {
   const { user, isLoading, isGuest, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithGitHub, signOut } = useAuth();
-  const { route, goToApp, goToLanding } = useRoute(user, isLoading);
-  const { theme, toggleTheme } = useTheme();
-  const [authModal, setAuthModal] = useState(null); // null | "signin" | "signup"
+  const { route, goToApp } = useRoute(user, isLoading);
+  const [authModal, setAuthModal] = useState(null);
 
   function openAuth(mode) { setAuthModal(mode); }
   function closeAuth() { setAuthModal(null); }
@@ -470,8 +471,6 @@ export default function App() {
           isGuest={isGuest}
           onOpenAuth={openAuth}
           onSignOut={signOut}
-          theme={theme}
-          onToggleTheme={toggleTheme}
         />
       )}
 

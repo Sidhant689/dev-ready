@@ -62,9 +62,7 @@ export default function Dashboard({
   onSelectTopic,
   onSelectBookmark,
 }) {
-  const displayName = user?.user_metadata?.full_name?.split(" ")[0]
-    || user?.email?.split("@")[0]
-    || "there";
+  const displayName = user?.user_metadata?.full_name?.split(" ")[0] || "there";
 
   const topicsMastered = useMemo(
     () => topics.filter((t) => {
