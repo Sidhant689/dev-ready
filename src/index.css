@@ -25,6 +25,35 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
+/* ── Light theme overrides ───────────────────────────────────── */
+[data-theme="light"] {
+  --color-surface:      #f8fafc;
+  --color-panel:        #ffffff;
+  --color-hover:        #f1f5f9;
+  --color-border:       #e2e8f0;
+  --color-heading:      #0f172a;
+  --color-bright:       #1e293b;
+  --color-primary:      #334155;
+  --color-soft:         #475569;
+  --color-subtle:       #64748b;
+  --color-muted:        #94a3b8;
+  --color-ghost:        #cbd5e1;
+  --color-accent-glow:  rgba(99,102,241,0.10);
+}
+
+[data-theme="light"] *::-webkit-scrollbar-thumb { background: #cbd5e1; }
+[data-theme="light"] input::placeholder { color: #94a3b8; }
+
+[data-theme="light"] .prose-answer code {
+  background: rgba(99,102,241,0.07);
+  color: #4f46e5;
+  border-color: rgba(99,102,241,0.18);
+}
+
+[data-theme="light"] .prose-answer blockquote {
+  background: rgba(99,102,241,0.04);
+}
+
 html, body, #root { height: 100%; overflow: hidden; }
 
 body { font-family: var(--font-sans); }
