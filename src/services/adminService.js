@@ -161,6 +161,54 @@ export async function adminSetUserRole(userId, role) {
   if (error) throw new Error(error.message);
 }
 
+// ── Content health + topic performance ───────────────────────
+export async function getContentHealth() {
+  const [{ count: totalQ }, { count: totalA }] = await Promise.all([
+    supabase.from("questions").select("id", { count: "exact", head: true }),
+    supabase.from("answers").select("id", { count: "exact", head: true }),
+  ]);
+  const total = totalQ ?? 0;
+  const answered = totalA ?? 0;
+  return {
+    totalQuestions: total,
+    withAnswers: answered,
+    withoutAnswers: total - answered,
+    coverage: total > 0 ? Math.round((answered / total) * 100) : 0,
+  };
+}
+
+export async function getTopicPerformance() {
+  const [{ data: topics }, { data: sections }, { data: questions }, { data: answers }] = await Promise.all([
+    supabase.from("topics").select("id, label").order("display_order"),
+    supabase.from("sections").select("id, topic_id"),
+    supabase.from("questions").select("id, section_id"),
+    supabase.from("answers").select("question_id"),
+  ]);
+
+  const answeredIds = new Set(answers?.map(a => a.question_id) ?? []);
+  const sectionsByTopic = {};
+  sections?.forEach(s => {
+    (sectionsByTopic[s.topic_id] ??= []).push(s.id);
+  });
+  const qsBySection = {};
+  questions?.forEach(q => {
+    (qsBySection[q.section_id] ??= []).push(q.id);
+  });
+
+  return (topics ?? []).map(t => {
+    const sIds = sectionsByTopic[t.id] ?? [];
+    const qIds = sIds.flatMap(sid => qsBySection[sid] ?? []);
+    const answered = qIds.filter(id => answeredIds.has(id)).length;
+    return {
+      ...t,
+      sections: sIds.length,
+      questions: qIds.length,
+      answers: answered,
+      coverage: qIds.length > 0 ? Math.round((answered / qIds.length) * 100) : 0,
+    };
+  });
+}
+
 // ── Difficulty levels ─────────────────────────────────────────
 export async function adminGetDifficultyLevels() {
   const { data, error } = await supabase

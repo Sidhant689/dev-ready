@@ -1,4 +1,5 @@
 import { useEffect, useRef, useMemo, useState } from "react";
+import { Lock, FileText } from "lucide-react";
 import { renderMarkdown } from "../utils/markdown";
 import Badge from "./ui/Badge";
 import Spinner from "./ui/Spinner";
@@ -36,10 +37,10 @@ function GuestGate({ onSignIn, onSignUp }) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 text-center">
       <div
-        className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 text-2xl"
+        className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 text-accent"
         style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.25)' }}
       >
-        🔒
+        <Lock size={28} strokeWidth={1.5} />
       </div>
 
       <h2 className="text-xl font-bold text-heading mb-2">
@@ -79,7 +80,7 @@ function NotesPanel({ user, questionId, isGuest, onOpenAuth }) {
   if (isGuest) {
     return (
       <div className="flex flex-col items-center justify-center h-full px-6 text-center py-8">
-        <div className="text-2xl mb-3">📝</div>
+        <div className="mb-3 text-muted"><FileText size={24} strokeWidth={1.5} /></div>
         <p className="text-sm font-semibold text-soft mb-1">Notes are saved to your account</p>
         <p className="text-xs text-muted mb-4 leading-relaxed">Sign in to write and sync personal notes for each question.</p>
         <button

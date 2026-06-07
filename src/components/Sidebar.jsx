@@ -1,3 +1,6 @@
+import { Flame } from "lucide-react";
+import TopicIcon from "./TopicIcon";
+
 function ProgressRing({ pct, size = 18 }) {
   const r = (size - 3) / 2;
   const circ = 2 * Math.PI * r;
@@ -84,15 +87,15 @@ export default function Sidebar({
                   : "hover:bg-hover text-muted border border-transparent hover:text-primary"
               }`}
             >
-              {/* Color dot */}
+              {/* Topic icon */}
               <span
-                className="w-1.5 h-1.5 rounded-full shrink-0"
-                style={{ background: topic.color_hex || "var(--color-accent)" }}
-              />
+                className={`shrink-0 transition-colors ${isActive ? "text-accent" : "text-muted group-hover:text-primary"}`}
+              >
+                <TopicIcon topic={topic} size={14} />
+              </span>
 
-              {/* Emoji + label */}
+              {/* Label */}
               <span className={`flex-1 text-xs font-medium truncate leading-snug ${isActive ? "text-bright" : ""}`}>
-                {topic.icon_emoji && <span className="mr-1">{topic.icon_emoji}</span>}
                 {topic.label}
               </span>
 
@@ -107,7 +110,9 @@ export default function Sidebar({
       <div className="shrink-0 border-t border-border bg-panel/80 px-4 py-3 space-y-2.5">
         {streak > 0 && (
           <div className="flex items-center gap-2">
-            <span className="text-sm">🔥</span>
+            <span className="w-7 h-7 rounded-lg bg-warning/10 border border-warning/20 flex items-center justify-center shrink-0 text-warning">
+              <Flame size={14} strokeWidth={1.6} />
+            </span>
             <div>
               <p className="text-xs font-semibold text-soft">{streak}-day streak</p>
               <p className="text-[10px] text-muted">Keep it going!</p>

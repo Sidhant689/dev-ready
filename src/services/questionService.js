@@ -157,6 +157,25 @@ async function getTopicStats(topicId) {
   };
 }
 
+// ✅ NEW: Fetch activity heatmap data (26 weeks back)
+export async function fetchUserActivity(userId) {
+  const since = new Date();
+  since.setDate(since.getDate() - 182);
+  const { data } = await supabase
+    .from("user_progress")
+    .select("updated_at")
+    .eq("user_id", userId)
+    .eq("status", "Done")
+    .gte("updated_at", since.toISOString());
+
+  const counts = {};
+  data?.forEach((r) => {
+    const d = r.updated_at?.slice(0, 10);
+    if (d) counts[d] = (counts[d] || 0) + 1;
+  });
+  return counts;
+}
+
 // ✅ LEGACY: Fetch all questions (for backward compatibility)
 export async function fetchAllQuestions() {
   const { data, error } = await supabase

@@ -1,7 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { supabase } from "../config/supabaseClient";
 import { renderMarkdown } from "../utils/markdown";
+import {
+  LayoutDashboard, BookOpen, Users, ArrowLeft,
+  Layers, HelpCircle, FileText, CheckCircle, AlertCircle,
+  TrendingUp, Shield, Zap, Database,
+  Plus, Pencil, Trash2, ChevronRight, Search,
+  UserCircle, Crown, X, Eye,
+} from "lucide-react";
 import {
   getAdminStats, getRecentUsers,
   adminGetTopics, adminCreateTopic, adminUpdateTopic, adminDeleteTopic,
@@ -10,6 +17,7 @@ import {
   adminGetAnswer, adminUpsertAnswer,
   adminGetUsers, adminGetUserStats, adminSetUserRole,
   adminGetDifficultyLevels,
+  getContentHealth, getTopicPerformance,
 } from "../services/adminService";
 
 /* ── Tiny shared UI ──────────────────────────────────────────── */
@@ -70,77 +78,270 @@ function ConfirmModal({ message, onConfirm, onClose }) {
   );
 }
 
-function StatCard({ icon, label, value }) {
-  return (
-    <div className="bg-panel border border-border rounded-xl p-4 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/20 flex items-center justify-center text-xl shrink-0">{icon}</div>
-      <div>
-        <p className="text-2xl font-bold text-heading tabular-nums">{value}</p>
-        <p className="text-xs text-muted font-medium">{label}</p>
-      </div>
-    </div>
-  );
-}
-
-/* ── Dashboard ───────────────────────────────────────────────── */
+/* ── Admin Dashboard ─────────────────────────────────────────── */
 function AdminDashboard() {
   const [stats, setStats] = useState(null);
+  const [health, setHealth] = useState(null);
+  const [topicPerf, setTopicPerf] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAdminStats().then(setStats).catch(console.error);
-    getRecentUsers(8).then(setRecent).catch(console.error);
+    Promise.all([
+      getAdminStats(),
+      getContentHealth(),
+      getTopicPerformance(),
+      getRecentUsers(6),
+    ]).then(([s, h, tp, r]) => {
+      setStats(s); setHealth(h); setTopicPerf(tp); setRecent(r);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, []);
+
+  const KPI_DEFS = [
+    { label: "Topics",    key: "topics",    Icon: Layers,      cls: "text-accent    bg-accent/10    border-accent/20"    },
+    { label: "Sections",  key: "sections",  Icon: Database,    cls: "text-blue-400  bg-blue-500/10  border-blue-500/20"  },
+    { label: "Questions", key: "questions", Icon: HelpCircle,  cls: "text-violet-400 bg-violet-500/10 border-violet-500/20" },
+    { label: "Answers",   key: "answers",   Icon: FileText,    cls: "text-success   bg-success/10   border-success/20"   },
+    { label: "Users",     key: "users",     Icon: Users,       cls: "text-warning   bg-warning/10   border-warning/20"   },
+  ];
+
+  function Skeleton() {
+    return <div className="h-6 w-16 bg-hover rounded animate-pulse" />;
+  }
+
+  function CoverageBar({ pct, label, color = "var(--color-accent)" }) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] text-muted">{label}</span>
+          <span className="text-[11px] font-semibold text-soft tabular-nums">{pct}%</span>
+        </div>
+        <div className="h-1.5 bg-hover rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto h-full">
-      <div>
-        <h1 className="text-xl font-bold text-heading">Dashboard</h1>
-        <p className="text-sm text-muted mt-0.5">Platform overview</p>
-      </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <StatCard icon="📚" label="Topics" value={stats?.topics ?? "…"} />
-        <StatCard icon="📂" label="Sections" value={stats?.sections ?? "…"} />
-        <StatCard icon="❓" label="Questions" value={stats?.questions ?? "…"} />
-        <StatCard icon="✍️" label="Answers" value={stats?.answers ?? "…"} />
-        <StatCard icon="👤" label="Users" value={stats?.users ?? "…"} />
-      </div>
-
-      <div>
-        <h2 className="text-xs font-semibold tracking-widest uppercase text-ghost mb-3">Recent Users</h2>
-        <div className="bg-panel border border-border rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted">Email</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted">Name</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted">Role</th>
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-muted">Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map((u) => (
-                <tr key={u.id} className="border-b border-border/50 hover:bg-hover/40 transition-colors">
-                  <td className="px-4 py-2.5 text-primary">{u.email}</td>
-                  <td className="px-4 py-2.5 text-muted">{u.full_name || "—"}</td>
-                  <td className="px-4 py-2.5">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${u.role === "admin" ? "bg-accent/15 text-accent" : "bg-hover text-muted"}`}>
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-muted tabular-nums text-xs">
-                    {new Date(u.created_at).toLocaleDateString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {recent.length === 0 && (
-            <p className="text-xs text-ghost text-center py-8">No users yet</p>
-          )}
+      {/* Header */}
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-heading">Command Center</h1>
+          <p className="text-sm text-muted mt-0.5">Real-time platform overview</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+          <span className="text-[11px] text-success font-medium">Live</span>
         </div>
       </div>
+
+      {/* KPI Row */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {KPI_DEFS.map(({ label, key, Icon, cls }) => (
+          <div key={key} className="bg-panel border border-border rounded-xl p-4 flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${cls}`}>
+              <Icon size={16} strokeWidth={1.7} />
+            </div>
+            <div>
+              {loading ? <Skeleton /> : (
+                <p className="text-2xl font-bold text-heading tabular-nums leading-none">{stats?.[key] ?? 0}</p>
+              )}
+              <p className="text-xs text-muted font-medium mt-0.5">{label}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Content Health + Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        {/* Content Health */}
+        <div className="lg:col-span-2 bg-panel border border-border rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-7 h-7 rounded-lg bg-success/10 border border-success/20 text-success flex items-center justify-center">
+              <Shield size={13} strokeWidth={1.8} />
+            </div>
+            <p className="text-sm font-semibold text-soft">Content Health</p>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-6 bg-hover rounded animate-pulse" />)}</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: "Coverage", value: `${health?.coverage ?? 0}%`, cls: "text-success", sub: "Questions with answers" },
+                  { label: "Answered",  value: health?.withAnswers ?? 0,   cls: "text-accent",  sub: "Questions answered"      },
+                  { label: "Missing",   value: health?.withoutAnswers ?? 0, cls: health?.withoutAnswers > 0 ? "text-danger" : "text-success", sub: "Need answers" },
+                ].map(({ label, value, cls, sub }) => (
+                  <div key={label} className="bg-hover/40 rounded-lg p-3 text-center">
+                    <p className={`text-xl font-bold tabular-nums ${cls}`}>{value}</p>
+                    <p className="text-[10px] font-semibold text-soft mt-0.5">{label}</p>
+                    <p className="text-[10px] text-muted">{sub}</p>
+                  </div>
+                ))}
+              </div>
+              <CoverageBar pct={health?.coverage ?? 0} label="Answer Coverage"
+                color={health?.coverage >= 90 ? "var(--color-success)" : health?.coverage >= 60 ? "var(--color-accent)" : "#ef4444"} />
+              {health?.withoutAnswers > 0 && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-danger/5 border border-danger/20">
+                  <AlertCircle size={13} className="text-danger shrink-0 mt-0.5" strokeWidth={2} />
+                  <p className="text-[11px] text-soft">
+                    <strong className="text-danger">{health.withoutAnswers} questions</strong> are missing answers and will show a blank response to users.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Quick Actions */}
+        <div className="bg-panel border border-border rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-7 h-7 rounded-lg bg-accent/10 border border-accent/20 text-accent flex items-center justify-center">
+              <Zap size={13} strokeWidth={1.8} />
+            </div>
+            <p className="text-sm font-semibold text-soft">Quick Actions</p>
+          </div>
+          <div className="space-y-2">
+            {[
+              { label: "Manage Content",   sub: "Topics, sections, questions", color: "text-accent",   tab: "content" },
+              { label: "Manage Users",     sub: "Roles, activity, access",     color: "text-blue-400", tab: "users"   },
+              { label: "Back to App",      sub: "Return to user-facing app",   color: "text-success",  href: "/"      },
+            ].map(({ label, sub, color, tab, href }) => (
+              href ? (
+                <a key={label} href={href}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-hover/40 hover:bg-hover border border-border hover:border-accent/30 transition-all group cursor-pointer">
+                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${color.replace("text-", "bg-")}`} />
+                  <div>
+                    <p className={`text-xs font-semibold ${color}`}>{label}</p>
+                    <p className="text-[10px] text-muted">{sub}</p>
+                  </div>
+                  <ArrowLeft size={11} className="text-ghost ml-auto rotate-180 group-hover:translate-x-0.5 transition-transform" />
+                </a>
+              ) : (
+                <div key={label}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-hover/40 hover:bg-hover border border-border hover:border-accent/30 transition-all group cursor-pointer">
+                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${color.replace("text-", "bg-")}`} />
+                  <div>
+                    <p className={`text-xs font-semibold ${color}`}>{label}</p>
+                    <p className="text-[10px] text-muted">{sub}</p>
+                  </div>
+                  <ArrowLeft size={11} className="text-ghost ml-auto rotate-180 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              )
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Topic Performance */}
+      <div className="bg-panel border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
+          <div className="w-7 h-7 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center">
+            <TrendingUp size={13} strokeWidth={1.8} />
+          </div>
+          <p className="text-sm font-semibold text-soft">Topic Performance</p>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border/60">
+              <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">Topic</th>
+              <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">Sections</th>
+              <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">Questions</th>
+              <th className="text-center px-4 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">Answers</th>
+              <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide w-40">Coverage</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              [1,2,3,4].map(i => (
+                <tr key={i} className="border-b border-border/40">
+                  <td colSpan={5} className="px-5 py-3"><div className="h-4 bg-hover rounded animate-pulse" /></td>
+                </tr>
+              ))
+            ) : topicPerf.map((t) => (
+              <tr key={t.id} className="border-b border-border/40 hover:bg-hover/30 transition-colors">
+                <td className="px-5 py-3">
+                  <span className="text-xs font-semibold text-primary">{t.label}</span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="text-xs font-semibold text-soft tabular-nums">{t.sections}</span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className="text-xs font-semibold text-soft tabular-nums">{t.questions}</span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`text-xs font-semibold tabular-nums ${t.answers === t.questions && t.questions > 0 ? "text-success" : t.answers > 0 ? "text-warning" : "text-danger"}`}>
+                    {t.answers}
+                  </span>
+                </td>
+                <td className="px-5 py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-hover rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${t.coverage}%`,
+                          background: t.coverage === 100 ? "var(--color-success)" : t.coverage >= 60 ? "var(--color-accent)" : "#ef4444",
+                        }} />
+                    </div>
+                    <span className="text-[10px] font-semibold text-muted tabular-nums w-8">{t.coverage}%</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!loading && topicPerf.length === 0 && (
+              <tr><td colSpan={5} className="text-center py-8 text-xs text-ghost">No topics found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Recent Users */}
+      <div className="bg-panel border border-border rounded-xl overflow-hidden">
+        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border">
+          <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 flex items-center justify-center">
+            <Users size={13} strokeWidth={1.8} />
+          </div>
+          <p className="text-sm font-semibold text-soft">Recent Registrations</p>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border/60">
+              <th className="text-left px-5 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">User</th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">Name</th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">Role</th>
+              <th className="text-left px-4 py-2.5 text-[11px] font-semibold text-ghost uppercase tracking-wide">Joined</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.map((u) => (
+              <tr key={u.id} className="border-b border-border/40 hover:bg-hover/30 transition-colors">
+                <td className="px-5 py-3 text-xs text-primary font-medium">{u.email}</td>
+                <td className="px-4 py-3 text-xs text-muted">{u.full_name || "—"}</td>
+                <td className="px-4 py-3">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                    u.role === "admin" ? "bg-accent/15 text-accent border border-accent/20" : "bg-hover text-muted border border-border"
+                  }`}>
+                    {u.role}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-xs text-muted tabular-nums">
+                  {new Date(u.created_at).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+                </td>
+              </tr>
+            ))}
+            {recent.length === 0 && !loading && (
+              <tr><td colSpan={4} className="text-center py-8 text-xs text-ghost">No users yet</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
     </div>
   );
 }
@@ -364,12 +565,11 @@ function AdminContent() {
   const [questions, setQuestions] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Modals
-  const [topicForm, setTopicForm] = useState(null);   // null | "new" | topic obj
+  const [topicForm, setTopicForm] = useState(null);
   const [sectionForm, setSectionForm] = useState(null);
   const [questionForm, setQuestionForm] = useState(null);
-  const [answerEditor, setAnswerEditor] = useState(null); // question obj
-  const [confirmDel, setConfirmDel] = useState(null);  // {type, id, label}
+  const [answerEditor, setAnswerEditor] = useState(null);
+  const [confirmDel, setConfirmDel] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -401,114 +601,256 @@ function AdminContent() {
     setConfirmDel(null);
   }
 
+  function ColHeader({ icon: Icon, label, count, onAdd, addLabel }) {
+    return (
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-panel/80 shrink-0">
+        <div className="flex items-center gap-2">
+          <Icon size={13} strokeWidth={1.8} className="text-ghost" />
+          <span className="text-[11px] font-bold tracking-widest uppercase text-ghost">{label}</span>
+          {count != null && (
+            <span className="text-[10px] font-semibold text-ghost bg-hover px-1.5 py-0.5 rounded-md tabular-nums">{count}</span>
+          )}
+        </div>
+        {onAdd && (
+          <button
+            onClick={onAdd}
+            title={addLabel}
+            className="w-6 h-6 rounded-md bg-accent/10 border border-accent/20 text-accent hover:bg-accent/20 flex items-center justify-center cursor-pointer transition-colors"
+          >
+            <Plus size={12} strokeWidth={2.5} />
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  function RowActions({ onEdit, onDelete }) {
+    return (
+      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        <button
+          onClick={(e) => { e.stopPropagation(); onEdit(); }}
+          className="w-6 h-6 rounded-md bg-hover hover:bg-border text-ghost hover:text-muted flex items-center justify-center cursor-pointer transition-colors"
+          title="Edit"
+        >
+          <Pencil size={10} strokeWidth={2} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          className="w-6 h-6 rounded-md hover:bg-danger/10 text-ghost hover:text-danger flex items-center justify-center cursor-pointer transition-colors"
+          title="Delete"
+        >
+          <Trash2 size={10} strokeWidth={2} />
+        </button>
+      </div>
+    );
+  }
+
+  function diffBadge(label) {
+    const map = { Basic: "text-success bg-success/10", Intermediate: "text-warning bg-warning/10", Advanced: "text-danger bg-danger/10" };
+    return map[label] || "text-muted bg-hover";
+  }
+
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden">
 
-      {/* ── Topics column ── */}
-      <div className="w-52 shrink-0 border-r border-border flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-          <span className="text-[10px] font-semibold tracking-widest uppercase text-ghost">Topics</span>
-          <button onClick={() => setTopicForm("new")} className="text-accent hover:text-accent-hover text-lg cursor-pointer" title="New topic">+</button>
-        </div>
-        <div className="flex-1 overflow-y-auto py-1">
-          {loading && <p className="text-xs text-ghost text-center py-4">Loading…</p>}
-          {topics.map((t) => (
-            <div
-              key={t.id}
-              className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${activeTopic?.id === t.id ? "bg-accent/10 text-bright" : "hover:bg-hover text-muted"}`}
-              onClick={() => setActiveTopic(t)}
-            >
-              {t.icon_emoji && <span className="shrink-0">{t.icon_emoji}</span>}
-              <span className="flex-1 text-xs font-medium truncate">{t.label}</span>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setTopicForm(t); }}
-                  className="text-ghost hover:text-muted cursor-pointer text-[11px]"
-                  title="Edit"
-                >✎</button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmDel({ type: "topic", id: t.id, label: t.label }); }}
-                  className="text-ghost hover:text-danger cursor-pointer text-[11px]"
-                  title="Delete"
-                >✕</button>
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* Breadcrumb bar */}
+      <div className="flex items-center gap-1.5 px-5 py-2.5 border-b border-border bg-surface/60 shrink-0">
+        <span className="text-[11px] text-ghost font-medium">Content</span>
+        {activeTopic && (
+          <>
+            <ChevronRight size={11} className="text-ghost" />
+            <button onClick={() => { setActiveSection(null); }}
+              className="text-[11px] text-soft hover:text-primary font-medium transition-colors cursor-pointer">{activeTopic.label}</button>
+          </>
+        )}
+        {activeSection && (
+          <>
+            <ChevronRight size={11} className="text-ghost" />
+            <span className="text-[11px] text-accent font-medium">{activeSection.label}</span>
+          </>
+        )}
       </div>
 
-      {/* ── Sections column ── */}
-      <div className="w-52 shrink-0 border-r border-border flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-3 py-2.5 border-b border-border">
-          <span className="text-[10px] font-semibold tracking-widest uppercase text-ghost">
-            {activeTopic ? activeTopic.label : "Sections"}
-          </span>
-          {activeTopic && (
-            <button onClick={() => setSectionForm("new")} className="text-accent hover:text-accent-hover text-lg cursor-pointer" title="New section">+</button>
-          )}
-        </div>
-        <div className="flex-1 overflow-y-auto py-1">
-          {!activeTopic && <p className="text-xs text-ghost text-center py-6">Select a topic</p>}
-          {sections.map((s) => (
-            <div
-              key={s.id}
-              className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${activeSection?.id === s.id ? "bg-accent/10 text-bright" : "hover:bg-hover text-muted"}`}
-              onClick={() => setActiveSection(s)}
-            >
-              <span className="flex-1 text-xs font-medium truncate">{s.label}</span>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={(e) => { e.stopPropagation(); setSectionForm(s); }} className="text-ghost hover:text-muted cursor-pointer text-[11px]" title="Edit">✎</button>
-                <button onClick={(e) => { e.stopPropagation(); setConfirmDel({ type: "section", id: s.id, label: s.label }); }} className="text-ghost hover:text-danger cursor-pointer text-[11px]" title="Delete">✕</button>
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* ── Topics column ── */}
+        <div className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+          <ColHeader icon={Layers} label="Topics" count={topics.length} onAdd={() => setTopicForm("new")} addLabel="New Topic" />
+          <div className="flex-1 overflow-y-auto py-1.5">
+            {loading && (
+              <div className="space-y-1 px-2">
+                {[1,2,3,4].map(i => <div key={i} className="h-8 bg-hover rounded-lg animate-pulse" />)}
               </div>
+            )}
+            {topics.map((t) => {
+              const isActive = activeTopic?.id === t.id;
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => setActiveTopic(t)}
+                  className={`flex items-center gap-2.5 mx-2 px-3 py-2 rounded-lg cursor-pointer group transition-all mb-0.5 ${
+                    isActive ? "bg-accent/10 border border-accent/20" : "hover:bg-hover border border-transparent"
+                  }`}
+                >
+                  <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-accent" : "bg-ghost"}`} />
+                  <span className={`flex-1 text-xs font-medium truncate ${isActive ? "text-bright" : "text-muted"}`}>
+                    {t.label}
+                  </span>
+                  <RowActions
+                    onEdit={() => setTopicForm(t)}
+                    onDelete={() => setConfirmDel({ type: "topic", id: t.id, label: t.label })}
+                  />
+                </div>
+              );
+            })}
+            {!loading && topics.length === 0 && (
+              <div className="flex flex-col items-center py-8 px-4 text-center">
+                <Layers size={20} className="text-ghost mb-2" strokeWidth={1.5} />
+                <p className="text-xs text-ghost">No topics yet</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Sections column ── */}
+        <div className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+          <ColHeader
+            icon={Database}
+            label="Sections"
+            count={activeTopic ? sections.length : null}
+            onAdd={activeTopic ? () => setSectionForm("new") : null}
+            addLabel="New Section"
+          />
+          <div className="flex-1 overflow-y-auto py-1.5">
+            {!activeTopic ? (
+              <div className="flex flex-col items-center py-10 px-4 text-center">
+                <ChevronRight size={18} className="text-ghost mb-2" strokeWidth={1.5} />
+                <p className="text-xs text-ghost">Select a topic</p>
+              </div>
+            ) : sections.length === 0 ? (
+              <div className="flex flex-col items-center py-10 px-4 text-center">
+                <Database size={18} className="text-ghost mb-2" strokeWidth={1.5} />
+                <p className="text-xs text-ghost">No sections yet</p>
+              </div>
+            ) : (
+              sections.map((s) => {
+                const isActive = activeSection?.id === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    onClick={() => setActiveSection(s)}
+                    className={`flex items-center gap-2.5 mx-2 px-3 py-2 rounded-lg cursor-pointer group transition-all mb-0.5 ${
+                      isActive ? "bg-accent/10 border border-accent/20" : "hover:bg-hover border border-transparent"
+                    }`}
+                  >
+                    <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? "bg-accent" : "bg-ghost"}`} />
+                    <span className={`flex-1 text-xs font-medium truncate ${isActive ? "text-bright" : "text-muted"}`}>
+                      {s.label}
+                    </span>
+                    <RowActions
+                      onEdit={() => setSectionForm(s)}
+                      onDelete={() => setConfirmDel({ type: "section", id: s.id, label: s.label })}
+                    />
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* ── Questions panel ── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border shrink-0 bg-panel/80">
+            <div className="flex items-center gap-2">
+              <HelpCircle size={13} strokeWidth={1.8} className="text-ghost" />
+              <span className="text-[11px] font-bold tracking-widest uppercase text-ghost">Questions</span>
+              {questions.length > 0 && (
+                <span className="text-[10px] font-semibold text-ghost bg-hover px-1.5 py-0.5 rounded-md tabular-nums">{questions.length}</span>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
+            {activeSection && (
+              <button
+                onClick={() => setQuestionForm("new")}
+                className="flex items-center gap-1.5 h-7 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold transition-colors cursor-pointer"
+              >
+                <Plus size={12} strokeWidth={2.5} />
+                New Question
+              </button>
+            )}
+          </div>
 
-      {/* ── Questions panel ── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
-          <span className="text-[10px] font-semibold tracking-widest uppercase text-ghost">
-            {activeSection ? activeSection.label : "Questions"}
-          </span>
-          {activeSection && (
-            <Btn variant="primary" onClick={() => setQuestionForm("new")}>+ New Question</Btn>
-          )}
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {!activeSection ? (
-            <p className="text-xs text-ghost text-center py-10">Select a section to see questions</p>
-          ) : questions.length === 0 ? (
-            <p className="text-xs text-ghost text-center py-10">No questions yet — add one above</p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-panel z-10">
-                <tr className="border-b border-border">
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-muted w-10">#</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-muted">Question</th>
-                  <th className="text-left px-4 py-2 text-xs font-semibold text-muted w-24">Difficulty</th>
-                  <th className="text-right px-4 py-2 text-xs font-semibold text-muted w-36">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {questions.map((q) => (
-                  <tr key={q.id} className="border-b border-border/50 hover:bg-hover/30 group">
-                    <td className="px-4 py-2.5 text-ghost text-xs tabular-nums">{q.serial_number}</td>
-                    <td className="px-4 py-2.5 text-primary leading-snug">{q.text}</td>
-                    <td className="px-4 py-2.5 text-xs text-muted">{q.difficulty_levels?.label || "—"}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex gap-1.5 justify-end">
-                        <Btn onClick={() => setAnswerEditor(q)}>Answer</Btn>
-                        <Btn onClick={() => setQuestionForm(q)}>Edit</Btn>
-                        <Btn variant="danger" onClick={() => setConfirmDel({ type: "question", id: q.id, label: q.text.slice(0, 40) })}>Del</Btn>
-                      </div>
-                    </td>
+          <div className="flex-1 overflow-y-auto">
+            {!activeSection ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-10">
+                <div className="w-12 h-12 rounded-xl bg-hover border border-border flex items-center justify-center mb-3">
+                  <HelpCircle size={20} className="text-ghost" strokeWidth={1.5} />
+                </div>
+                <p className="text-sm font-medium text-ghost">Select a section</p>
+                <p className="text-xs text-ghost mt-1">Questions will appear here</p>
+              </div>
+            ) : questions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center py-10">
+                <div className="w-12 h-12 rounded-xl bg-hover border border-border flex items-center justify-center mb-3">
+                  <Plus size={20} className="text-ghost" strokeWidth={1.5} />
+                </div>
+                <p className="text-sm font-medium text-ghost">No questions yet</p>
+                <p className="text-xs text-ghost mt-1">Add the first question above</p>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-panel z-10 border-b border-border">
+                  <tr>
+                    <th className="text-left px-5 py-2.5 text-[10px] font-bold tracking-wider uppercase text-ghost w-10">#</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-bold tracking-wider uppercase text-ghost">Question</th>
+                    <th className="text-left px-4 py-2.5 text-[10px] font-bold tracking-wider uppercase text-ghost w-28">Difficulty</th>
+                    <th className="text-right px-5 py-2.5 text-[10px] font-bold tracking-wider uppercase text-ghost w-40">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {questions.map((q) => (
+                    <tr key={q.id} className="border-b border-border/40 hover:bg-hover/30 group transition-colors">
+                      <td className="px-5 py-3 text-ghost text-[11px] tabular-nums font-mono">{q.serial_number}</td>
+                      <td className="px-4 py-3 text-primary text-xs leading-relaxed">{q.text}</td>
+                      <td className="px-4 py-3">
+                        {q.difficulty_levels?.label ? (
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${diffBadge(q.difficulty_levels.label)}`}>
+                            {q.difficulty_levels.label}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-ghost">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex gap-1.5 justify-end">
+                          <button
+                            onClick={() => setAnswerEditor(q)}
+                            className="flex items-center gap-1 h-7 px-2.5 rounded-lg bg-hover hover:bg-border border border-border text-xs font-medium text-muted hover:text-primary transition-colors cursor-pointer"
+                          >
+                            <Eye size={11} strokeWidth={1.8} />
+                            Answer
+                          </button>
+                          <button
+                            onClick={() => setQuestionForm(q)}
+                            className="w-7 h-7 rounded-lg bg-hover hover:bg-border border border-border text-ghost hover:text-muted flex items-center justify-center cursor-pointer transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil size={11} strokeWidth={1.8} />
+                          </button>
+                          <button
+                            onClick={() => setConfirmDel({ type: "question", id: q.id, label: q.text.slice(0, 50) })}
+                            className="w-7 h-7 rounded-lg hover:bg-danger/10 border border-transparent hover:border-danger/20 text-ghost hover:text-danger flex items-center justify-center cursor-pointer transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 size={11} strokeWidth={1.8} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
 
@@ -591,73 +933,172 @@ function AdminUsers() {
   }
 
   const filtered = users.filter((u) =>
-    !search || u.email.toLowerCase().includes(search.toLowerCase()) || (u.full_name || "").toLowerCase().includes(search.toLowerCase())
+    !search ||
+    u.email.toLowerCase().includes(search.toLowerCase()) ||
+    (u.full_name || "").toLowerCase().includes(search.toLowerCase())
   );
 
+  function initials(u) {
+    if (u.full_name) return u.full_name.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+    return u.email.slice(0, 2).toUpperCase();
+  }
+
+  function avatarColor(email) {
+    const colors = [
+      "bg-accent/20 text-accent", "bg-success/20 text-success",
+      "bg-warning/20 text-warning", "bg-violet-500/20 text-violet-400",
+      "bg-blue-500/20 text-blue-400", "bg-pink-500/20 text-pink-400",
+    ];
+    const idx = email.charCodeAt(0) % colors.length;
+    return colors[idx];
+  }
+
+  const adminCount = users.filter(u => u.role === "admin").length;
+  const userCount = users.filter(u => u.role !== "admin").length;
+
   return (
-    <div className="p-6 space-y-4 overflow-y-auto h-full">
-      <div className="flex items-center justify-between gap-4">
+    <div className="p-6 space-y-5 overflow-y-auto h-full">
+
+      {/* Header */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-bold text-heading">Users</h1>
-          <p className="text-sm text-muted mt-0.5">{users.length} registered</p>
+          <p className="text-sm text-muted mt-0.5">{users.length} registered accounts</p>
         </div>
+
+        {/* Quick stats */}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-panel border border-border">
+            <Users size={12} className="text-muted" strokeWidth={1.8} />
+            <span className="text-xs text-muted tabular-nums">{userCount} users</span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20">
+            <Crown size={12} className="text-accent" strokeWidth={1.8} />
+            <span className="text-xs text-accent tabular-nums font-medium">{adminCount} admins</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" strokeWidth={1.8} />
         <input
-          className="h-9 px-3 rounded-lg bg-panel border border-border text-primary text-sm outline-none focus:border-accent transition-colors placeholder:text-ghost w-56"
-          placeholder="Search by email…"
+          className="w-full h-9 pl-9 pr-4 rounded-lg bg-panel border border-border text-primary text-sm outline-none focus:border-accent transition-colors placeholder:text-ghost"
+          placeholder="Search by email or name…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        {search && (
+          <button onClick={() => setSearch("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-ghost hover:text-muted cursor-pointer">
+            <X size={12} strokeWidth={2} />
+          </button>
+        )}
       </div>
 
+      {/* Table */}
       <div className="bg-panel border border-border rounded-xl overflow-hidden">
         {loading ? (
-          <p className="text-xs text-ghost text-center py-10">Loading…</p>
+          <div className="space-y-0">
+            {[1,2,3].map(i => (
+              <div key={i} className="flex items-center gap-4 px-5 py-4 border-b border-border/50">
+                <div className="w-8 h-8 rounded-full bg-hover animate-pulse" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3 bg-hover rounded animate-pulse w-48" />
+                  <div className="h-2.5 bg-hover rounded animate-pulse w-32" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted">User</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted">Provider</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted">Role</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-muted">Joined</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-muted">Actions</th>
+                <th className="text-left px-5 py-3 text-[10px] font-bold tracking-wider uppercase text-ghost">User</th>
+                <th className="text-left px-4 py-3 text-[10px] font-bold tracking-wider uppercase text-ghost">Provider</th>
+                <th className="text-left px-4 py-3 text-[10px] font-bold tracking-wider uppercase text-ghost">Role</th>
+                <th className="text-left px-4 py-3 text-[10px] font-bold tracking-wider uppercase text-ghost">Joined</th>
+                <th className="text-right px-5 py-3 text-[10px] font-bold tracking-wider uppercase text-ghost">Activity</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((u) => (
                 <>
-                  <tr key={u.id} className="border-b border-border/50 hover:bg-hover/30">
-                    <td className="px-4 py-3">
-                      <p className="text-primary font-medium">{u.email}</p>
-                      {u.full_name && <p className="text-xs text-muted">{u.full_name}</p>}
+                  <tr key={u.id} className="border-b border-border/40 hover:bg-hover/30 transition-colors group">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${avatarColor(u.email)}`}>
+                          {initials(u)}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-primary truncate">{u.email}</p>
+                          {u.full_name && <p className="text-[11px] text-muted">{u.full_name}</p>}
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted capitalize">{u.provider || "—"}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3.5">
+                      <span className="text-[11px] text-muted capitalize bg-hover px-2 py-0.5 rounded-md border border-border">
+                        {u.provider || "email"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5">
                       <select
                         value={u.role}
                         onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                        className="text-xs px-2 py-1 rounded-md bg-hover border border-border text-primary cursor-pointer outline-none focus:border-accent"
+                        className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border cursor-pointer outline-none transition-colors ${
+                          u.role === "admin"
+                            ? "bg-accent/10 border-accent/30 text-accent"
+                            : "bg-hover border-border text-muted"
+                        }`}
                       >
                         <option value="user">user</option>
                         <option value="admin">admin</option>
                       </select>
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted tabular-nums">
-                      {new Date(u.created_at).toLocaleDateString()}
+                    <td className="px-4 py-3.5 text-[11px] text-muted tabular-nums">
+                      {new Date(u.created_at).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <Btn onClick={() => toggleStats(u.id)} disabled={!!expanding[u.id]}>
-                        {expanding[u.id] ? "…" : stats[u.id] ? "Hide Stats" : "Stats"}
-                      </Btn>
+                    <td className="px-5 py-3.5 text-right">
+                      <button
+                        onClick={() => toggleStats(u.id)}
+                        disabled={!!expanding[u.id]}
+                        className={`flex items-center gap-1.5 h-7 px-3 rounded-lg text-[11px] font-medium transition-colors cursor-pointer disabled:opacity-40 ml-auto ${
+                          stats[u.id]
+                            ? "bg-accent/10 border border-accent/20 text-accent"
+                            : "bg-hover border border-border text-muted hover:text-primary hover:border-accent/30"
+                        }`}
+                      >
+                        <TrendingUp size={10} strokeWidth={2} />
+                        {expanding[u.id] ? "Loading…" : stats[u.id] ? "Hide" : "Stats"}
+                      </button>
                     </td>
                   </tr>
                   {stats[u.id] && (
-                    <tr key={`${u.id}-stats`} className="border-b border-border/50 bg-hover/20">
-                      <td colSpan={5} className="px-4 py-2">
-                        <div className="flex items-center gap-6 text-xs text-muted">
-                          <span>Total tracked: <strong className="text-primary">{stats[u.id].total}</strong></span>
-                          <span>Done: <strong className="text-success">{stats[u.id].done}</strong></span>
-                          <span>In Progress: <strong className="text-warning">{stats[u.id].inProgress}</strong></span>
+                    <tr key={`${u.id}-stats`} className="border-b border-border/40 bg-accent/3">
+                      <td colSpan={5} className="px-5 py-3">
+                        <div className="flex items-center gap-5 flex-wrap">
+                          {[
+                            { label: "Total Tracked", value: stats[u.id].total, cls: "text-primary" },
+                            { label: "Completed",     value: stats[u.id].done, cls: "text-success" },
+                            { label: "In Progress",   value: stats[u.id].inProgress, cls: "text-warning" },
+                          ].map(({ label, value, cls }) => (
+                            <div key={label} className="flex items-center gap-2">
+                              <div className={`w-1.5 h-1.5 rounded-full ${cls.replace("text-", "bg-")}`} />
+                              <span className="text-[11px] text-muted">{label}:</span>
+                              <span className={`text-[11px] font-semibold tabular-nums ${cls}`}>{value}</span>
+                            </div>
+                          ))}
+                          {stats[u.id].total > 0 && (
+                            <div className="flex items-center gap-2 ml-auto">
+                              <div className="w-24 h-1.5 bg-hover rounded-full overflow-hidden">
+                                <div className="h-full bg-success rounded-full transition-all"
+                                  style={{ width: `${Math.round((stats[u.id].done / stats[u.id].total) * 100)}%` }} />
+                              </div>
+                              <span className="text-[10px] text-muted tabular-nums">
+                                {Math.round((stats[u.id].done / stats[u.id].total) * 100)}% done
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -665,7 +1106,12 @@ function AdminUsers() {
                 </>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-xs text-ghost">No users found</td></tr>
+                <tr>
+                  <td colSpan={5} className="text-center py-12">
+                    <Search size={20} className="text-ghost mx-auto mb-2" strokeWidth={1.5} />
+                    <p className="text-xs text-ghost">No users found for "{search}"</p>
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
@@ -677,9 +1123,9 @@ function AdminUsers() {
 
 /* ── Admin Layout ────────────────────────────────────────────── */
 const NAV = [
-  { id: "dashboard", label: "Dashboard", icon: "▦" },
-  { id: "content",   label: "Content",   icon: "📚" },
-  { id: "users",     label: "Users",     icon: "👥" },
+  { id: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
+  { id: "content",   label: "Content",   Icon: BookOpen        },
+  { id: "users",     label: "Users",     Icon: Users           },
 ];
 
 function AdminLayout({ adminUser }) {
@@ -696,37 +1142,40 @@ function AdminLayout({ adminUser }) {
       {/* Sidebar */}
       <aside className="w-52 shrink-0 bg-panel border-r border-border flex flex-col">
         {/* Logo */}
-        <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
-          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center text-white text-xs font-bold" style={{ boxShadow: '0 0 12px rgba(99,102,241,0.35)' }}>D</div>
+        <div className="flex items-center gap-2.5 px-4 py-4 border-b border-border">
+          <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center shrink-0" style={{ boxShadow: "0 0 12px rgba(99,102,241,0.35)" }}>
+            <CheckCircle size={14} strokeWidth={2.5} className="text-white" />
+          </div>
           <div>
             <p className="text-xs font-bold text-bright">DevReady</p>
-            <p className="text-[10px] text-danger font-semibold tracking-wide uppercase">Admin</p>
+            <p className="text-[10px] text-danger font-semibold tracking-wider uppercase">Admin</p>
           </div>
         </div>
 
         {/* Nav */}
         <nav className="flex-1 py-3 px-2 space-y-0.5">
-          {NAV.map((n) => (
+          {NAV.map(({ id, label, Icon }) => (
             <button
-              key={n.id}
-              onClick={() => setView(n.id)}
+              key={id}
+              onClick={() => setView(id)}
               className={`flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                view === n.id ? "bg-accent/10 text-accent" : "text-muted hover:bg-hover hover:text-primary"
+                view === id ? "bg-accent/10 text-accent border border-accent/20" : "text-muted hover:bg-hover hover:text-primary border border-transparent"
               }`}
             >
-              <span>{n.icon}</span>
-              {n.label}
+              <Icon size={13} strokeWidth={1.7} />
+              {label}
             </button>
           ))}
         </nav>
 
         {/* Back to app + user */}
-        <div className="border-t border-border p-3 space-y-2">
+        <div className="border-t border-border p-3 space-y-1">
           <a
             href="/"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-muted hover:bg-hover hover:text-primary transition-colors"
           >
-            ← Back to App
+            <ArrowLeft size={12} strokeWidth={1.7} />
+            Back to App
           </a>
           <div className="px-3 py-2">
             <p className="text-[11px] font-medium text-soft truncate">{adminUser?.email}</p>
