@@ -11,6 +11,7 @@ import {
   UserCircle, Crown, X, Eye,
   Upload, Download, Table2, AlertTriangle,
   Bell, MessageSquare, Megaphone, Send, Pin, ThumbsUp,
+  Map, Star, Check,
 } from "lucide-react";
 import { fetchAllComments, deleteComment, togglePin } from "../services/commentService";
 import { sendBroadcast, fetchBroadcasts, fetchAllNotifications } from "../services/notificationService";
@@ -1934,12 +1935,610 @@ function AdminNotifications({ adminUser }) {
 }
 
 /* ── Admin Layout ────────────────────────────────────────────── */
+/* ── Topics Roadmap ──────────────────────────────────────────── */
+const ROADMAP = [
+  {
+    category: "🖥️ Programming Languages",
+    items: [
+      { name: "Python",      priority: 3, notes: "AI/ML, backend, scripting — most demanded" },
+      { name: "Java",        priority: 3, notes: "Enterprise, Android, Spring Boot" },
+      { name: "Go (Golang)", priority: 2, notes: "Cloud-native, microservices, backend" },
+      { name: "C++",         priority: 2, notes: "Systems, game dev, embedded" },
+      { name: "PHP",         priority: 2, notes: "Massive in web — Laravel" },
+      { name: "Kotlin",      priority: 2, notes: "Android + server-side" },
+      { name: "Swift",       priority: 2, notes: "iOS / macOS dev" },
+      { name: "Rust",        priority: 1, notes: "Systems, WASM — growing fast" },
+      { name: "Ruby",        priority: 1, notes: "Rails shops still hire" },
+    ],
+  },
+  {
+    category: "🌐 Frontend",
+    items: [
+      { name: "Next.js",              priority: 3, notes: "Full-stack React — heavily asked" },
+      { name: "Vue.js",               priority: 3, notes: "Very common alongside React" },
+      { name: "Angular",              priority: 2, notes: "Enterprise frontend" },
+      { name: "CSS / HTML Fundamentals", priority: 2, notes: "Flexbox, Grid, specificity, accessibility" },
+      { name: "Web Performance",      priority: 2, notes: "Core Web Vitals, lazy loading, bundling" },
+      { name: "TypeScript Deep Dive", priority: 2, notes: "Generics, decorators, utility types" },
+    ],
+  },
+  {
+    category: "⚙️ Backend & APIs",
+    items: [
+      { name: "Node.js / Express", priority: 3, notes: "JS backend staple" },
+      { name: "REST API Design",   priority: 3, notes: "Every backend role asks this" },
+      { name: "Spring Boot",       priority: 3, notes: "Java backend standard" },
+      { name: "Django / Flask",    priority: 2, notes: "Python web frameworks" },
+      { name: "GraphQL",           priority: 2, notes: "Used at scale — Facebook, GitHub" },
+      { name: "gRPC",              priority: 1, notes: "Microservices communication" },
+    ],
+  },
+  {
+    category: "🗄️ Databases",
+    items: [
+      { name: "MongoDB",               priority: 3, notes: "Most popular NoSQL" },
+      { name: "Redis",                 priority: 3, notes: "Caching, pub/sub, sessions" },
+      { name: "PostgreSQL Deep Dive",  priority: 2, notes: "Advanced features beyond basic SQL" },
+      { name: "Database Design",       priority: 2, notes: "Normalization, indexing, ERD" },
+      { name: "Elasticsearch",         priority: 1, notes: "Search at scale" },
+    ],
+  },
+  {
+    category: "☁️ Cloud & DevOps",
+    items: [
+      { name: "AWS",              priority: 3, notes: "Biggest cloud — EC2, S3, Lambda, RDS" },
+      { name: "Docker",           priority: 3, notes: "Every dev role requires this now" },
+      { name: "Linux / Shell",    priority: 3, notes: "Every backend / DevOps role" },
+      { name: "CI/CD",            priority: 2, notes: "GitHub Actions, Jenkins, pipelines" },
+      { name: "Kubernetes",       priority: 2, notes: "Container orchestration" },
+      { name: "GCP",              priority: 2, notes: "Google Cloud — growing fast" },
+      { name: "Networking Basics",priority: 2, notes: "DNS, HTTP, TCP/IP, load balancers" },
+      { name: "Terraform",        priority: 1, notes: "Infrastructure as Code" },
+    ],
+  },
+  {
+    category: "🏗️ Architecture & Patterns",
+    items: [
+      { name: "Design Patterns",          priority: 3, notes: "GoF patterns — every senior role" },
+      { name: "Microservices",            priority: 3, notes: "Architecture interviews" },
+      { name: "Message Queues",           priority: 2, notes: "Kafka, RabbitMQ, SQS" },
+      { name: "Event-Driven Architecture",priority: 1, notes: "Distributed systems" },
+    ],
+  },
+  {
+    category: "🔒 Security",
+    items: [
+      { name: "Web Security / OWASP",  priority: 3, notes: "Every full-stack role" },
+      { name: "Authentication & Auth", priority: 3, notes: "JWT, OAuth2, SSO" },
+      { name: "Cryptography Basics",   priority: 1, notes: "Encryption, hashing, TLS" },
+    ],
+  },
+  {
+    category: "📱 Mobile",
+    items: [
+      { name: "React Native",    priority: 3, notes: "Cross-platform — most in demand" },
+      { name: "Flutter",         priority: 2, notes: "Fast-growing cross-platform" },
+      { name: "Android (Kotlin)",priority: 2, notes: "Native Android dev" },
+      { name: "iOS (Swift)",     priority: 1, notes: "Native iOS dev" },
+    ],
+  },
+  {
+    category: "🧪 Testing & Quality",
+    items: [
+      { name: "Unit & Integration Testing", priority: 3, notes: "Every role asks" },
+      { name: "QA & Automation",            priority: 2, notes: "Selenium, Cypress, Playwright" },
+      { name: "TDD / BDD",                  priority: 1, notes: "Senior roles" },
+    ],
+  },
+  {
+    category: "🤖 AI / Data",
+    items: [
+      { name: "Machine Learning Basics", priority: 2, notes: "Product + ML engineer roles" },
+      { name: "Data Engineering",        priority: 2, notes: "Pipelines, ETL, Spark" },
+      { name: "Prompt Engineering",      priority: 1, notes: "New but fast-growing" },
+    ],
+  },
+  {
+    category: "💼 Soft Skills / HR",
+    items: [
+      { name: "Behavioural Questions",        priority: 3, notes: "STAR method — every interview" },
+      { name: "System Design Communication",  priority: 2, notes: "How to talk through designs" },
+      { name: "Salary Negotiation",           priority: 1, notes: "Often overlooked" },
+    ],
+  },
+];
+
+const STORAGE_KEY = "devready_roadmap_status";
+
+function AdminRoadmap() {
+  const [search, setSearch] = useState("");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [statuses, setStatuses] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch { return {}; }
+  });
+
+  function setStatus(name, status) {
+    setStatuses(prev => {
+      const next = { ...prev, [name]: status };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  const allItems = ROADMAP.flatMap(cat => cat.items.map(i => ({ ...i, category: cat.category })));
+
+  const filtered = allItems.filter(item => {
+    if (filterPriority !== "all" && item.priority !== Number(filterPriority)) return false;
+    const status = statuses[item.name] || "pending";
+    if (filterStatus === "pending"    && status !== "pending")    return false;
+    if (filterStatus === "inprogress" && status !== "inprogress") return false;
+    if (filterStatus === "done"       && status !== "done")       return false;
+    if (search && !item.name.toLowerCase().includes(search.toLowerCase()) && !item.notes.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
+
+  const totalDone = allItems.filter(i => statuses[i.name] === "done").length;
+  const totalInProgress = allItems.filter(i => statuses[i.name] === "inprogress").length;
+  const totalPending = allItems.filter(i => !statuses[i.name] || statuses[i.name] === "pending").length;
+  const pct = Math.round((totalDone / allItems.length) * 100);
+
+  function PriorityStars({ p }) {
+    return (
+      <div className="flex gap-0.5">
+        {[1,2,3].map(n => (
+          <Star key={n} size={10} strokeWidth={2}
+            className={n <= p ? "text-warning fill-warning" : "text-ghost"} />
+        ))}
+      </div>
+    );
+  }
+
+  const STATUS_CFG = {
+    pending:    { label: "Pending",     cls: "bg-hover text-ghost border-border",           dot: "bg-ghost"   },
+    inprogress: { label: "In Progress", cls: "bg-warning/10 text-warning border-warning/30", dot: "bg-warning" },
+    done:       { label: "Done",        cls: "bg-success/10 text-success border-success/30", dot: "bg-success" },
+  };
+
+  // Group filtered items back by category
+  const grouped = ROADMAP.map(cat => ({
+    ...cat,
+    items: cat.items.filter(i => filtered.find(f => f.name === i.name)),
+  })).filter(cat => cat.items.length > 0);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="shrink-0 px-6 py-4 border-b border-border">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-8 h-8 rounded-lg bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center shrink-0">
+            <Map size={15} strokeWidth={1.8} />
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-heading">Topics Roadmap</h1>
+            <p className="text-[11px] text-muted">Track which topics to add next — {allItems.length} total</p>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex-1 h-2 bg-hover rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-700 bg-success"
+              style={{ width: `${pct}%` }} />
+          </div>
+          <span className="text-xs font-semibold text-soft tabular-nums w-10">{pct}%</span>
+        </div>
+
+        {/* Stats row */}
+        <div className="flex gap-3">
+          {[
+            { label: "Done",        value: totalDone,       cls: "text-success" },
+            { label: "In Progress", value: totalInProgress, cls: "text-warning" },
+            { label: "Pending",     value: totalPending,    cls: "text-ghost"   },
+            { label: "Total",       value: allItems.length, cls: "text-primary" },
+          ].map(({ label, value, cls }) => (
+            <div key={label} className="flex items-center gap-1.5 text-[11px]">
+              <span className={`font-bold tabular-nums ${cls}`}>{value}</span>
+              <span className="text-ghost">{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="shrink-0 flex flex-wrap gap-2 px-6 py-3 border-b border-border bg-surface/40">
+        <div className="relative flex-1 min-w-40">
+          <Search size={12} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" />
+          <input value={search} onChange={e => setSearch(e.target.value)}
+            placeholder="Search topics…"
+            className="w-full h-8 pl-8 pr-3 bg-panel border border-border rounded-lg text-xs text-primary outline-none focus:border-accent transition-colors placeholder:text-ghost" />
+        </div>
+        <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)}
+          className="h-8 px-2.5 rounded-lg bg-panel border border-border text-xs text-primary outline-none focus:border-accent cursor-pointer">
+          <option value="all">All Priorities</option>
+          <option value="3">⭐⭐⭐ High</option>
+          <option value="2">⭐⭐ Medium</option>
+          <option value="1">⭐ Low</option>
+        </select>
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="h-8 px-2.5 rounded-lg bg-panel border border-border text-xs text-primary outline-none focus:border-accent cursor-pointer">
+          <option value="all">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="inprogress">In Progress</option>
+          <option value="done">Done</option>
+        </select>
+        {(search || filterPriority !== "all" || filterStatus !== "all") && (
+          <button onClick={() => { setSearch(""); setFilterPriority("all"); setFilterStatus("all"); }}
+            className="h-8 px-2.5 rounded-lg border border-border bg-hover text-xs text-ghost hover:text-danger hover:border-danger/30 transition-colors cursor-pointer flex items-center gap-1">
+            <X size={10} strokeWidth={2} /> Clear
+          </button>
+        )}
+        <span className="ml-auto self-center text-[11px] text-ghost tabular-nums">{filtered.length} topics</span>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-y-auto">
+        {grouped.map(cat => (
+          <div key={cat.category}>
+            {/* Category header */}
+            <div className="sticky top-0 z-10 px-6 py-2 bg-hover/80 backdrop-blur border-b border-border flex items-center gap-2">
+              <span className="text-xs font-bold text-soft">{cat.category}</span>
+              <span className="text-[10px] text-ghost">({cat.items.length})</span>
+              <span className="ml-auto text-[10px] text-ghost">
+                {cat.items.filter(i => statuses[i.name] === "done").length}/{cat.items.length} done
+              </span>
+            </div>
+
+            <table className="w-full text-sm">
+              <tbody>
+                {cat.items.map(item => {
+                  const status = statuses[item.name] || "pending";
+                  const cfg = STATUS_CFG[status];
+                  return (
+                    <tr key={item.name} className={`border-b border-border/40 hover:bg-hover/20 transition-colors ${status === "done" ? "opacity-60" : ""}`}>
+                      {/* Priority */}
+                      <td className="px-5 py-3 w-20">
+                        <PriorityStars p={item.priority} />
+                      </td>
+                      {/* Name */}
+                      <td className="px-3 py-3 w-48">
+                        <div className="flex items-center gap-2">
+                          {status === "done" && <Check size={12} strokeWidth={2.5} className="text-success shrink-0" />}
+                          <span className={`text-xs font-semibold ${status === "done" ? "line-through text-ghost" : "text-primary"}`}>
+                            {item.name}
+                          </span>
+                        </div>
+                      </td>
+                      {/* Notes */}
+                      <td className="px-3 py-3">
+                        <span className="text-[11px] text-muted">{item.notes}</span>
+                      </td>
+                      {/* Status dropdown */}
+                      <td className="px-5 py-3 w-40">
+                        <select value={status}
+                          onChange={e => setStatus(item.name, e.target.value)}
+                          className={`h-7 px-2.5 rounded-lg border text-[11px] font-semibold cursor-pointer outline-none transition-colors ${cfg.cls}`}>
+                          <option value="pending">Pending</option>
+                          <option value="inprogress">In Progress</option>
+                          <option value="done">Done</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ))}
+
+        {grouped.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Map size={28} strokeWidth={1.2} className="text-ghost mx-auto mb-2" />
+            <p className="text-sm text-muted">No topics match your filters</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Prompts Page ────────────────────────────────────────────── */
+const PROMPT_STEPS = [
+  {
+    step: 1,
+    title: "Create Topic",
+    icon: "🗂️",
+    color: "text-accent bg-accent/10 border-accent/20",
+    description: "Go to Content → click + next to Topics. Fill in the topic name, emoji icon, and color.",
+    prompt: (topic) => `I want to add a new topic called "${topic}" to DevReady.
+
+Go to Admin → Content → Topics and create it with:
+- Label: ${topic}
+- Pick a relevant emoji icon
+- Pick a fitting color hex
+
+Then confirm it's created before moving to sections.`,
+  },
+  {
+    step: 2,
+    title: "Create Sections",
+    icon: "📂",
+    color: "text-blue-400 bg-blue-500/10 border-blue-500/20",
+    description: "After topic is created, add logical sections (chapters/subtopics) under it.",
+    prompt: (topic) => `The topic "${topic}" has been created in DevReady admin.
+
+Now create the following sections under "${topic}" in Admin → Content → Sections.
+Number them in display order. Suggested sections for ${topic}:
+
+1. Basics & Fundamentals
+2. Core Concepts
+3. Advanced Topics
+4. Best Practices & Patterns
+5. Real-world & Interview Questions
+
+Adjust section names to match what's most relevant for ${topic} interviews. Create each one in the admin panel under the ${topic} topic.`,
+  },
+  {
+    step: 3,
+    title: "Bulk Import Questions",
+    icon: "❓",
+    color: "text-violet-400 bg-violet-500/10 border-violet-500/20",
+    description: "Use Bulk Import to add questions as a JSON or CSV file.",
+    prompt: (topic) => `Generate a list of 30 interview questions for the "${topic}" topic, spread across these difficulty levels: Basic, Intermediate, Advanced.
+
+Format as JSON array like this:
+[
+  { "text": "What is ...?", "difficulty": "Basic", "serial_number": 1 },
+  { "text": "Explain ...?", "difficulty": "Intermediate", "serial_number": 2 },
+  { "text": "How does ... work internally?", "difficulty": "Advanced", "serial_number": 3 }
+]
+
+Rules:
+- Questions must be specific and commonly asked in real technical interviews
+- Cover a wide range: concepts, differences, practical usage, code patterns, performance
+- No duplicate questions
+- serial_number starts at 1 and increments
+- difficulty must be exactly "Basic", "Intermediate", or "Advanced"
+
+Generate 30 questions for: ${topic}`,
+  },
+  {
+    step: 4,
+    title: "Write Answers",
+    icon: "✍️",
+    color: "text-success bg-success/10 border-success/20",
+    description: "For each question, write a detailed answer in the Answer editor (Markdown supported).",
+    prompt: (topic) => `Write a detailed answer for this ${topic} interview question.
+
+Use this exact Markdown structure:
+
+## ⚡ Short Answer
+One clear sentence that directly answers the question.
+
+## 📘 Detailed Explanation
+**What it is:** ...
+**Why it exists:** ...
+**How it works internally:** ...
+**Benefits:** ...
+**Drawbacks / limitations:** ...
+
+## 💻 Code Example
+\`\`\`[language]
+// Practical, working code example
+\`\`\`
+
+## 🔑 Key Points
+- Point 1
+- Point 2
+- Point 3
+
+Rules:
+- Keep it factual and interview-focused
+- Code examples must be concise and correct
+- Avoid fluff — every sentence must add value
+- Target audience: developers preparing for technical interviews
+
+Question: [PASTE QUESTION HERE]`,
+  },
+  {
+    step: 5,
+    title: "Bulk Answer via AI",
+    icon: "🤖",
+    color: "text-warning bg-warning/10 border-warning/20",
+    description: "Generate answers for multiple questions at once using AI.",
+    prompt: (topic) => `I have the following ${topic} interview questions in DevReady. Generate a complete answer for EACH question using this Markdown format:
+
+---
+**Q: [question text]**
+
+## ⚡ Short Answer
+[one sentence]
+
+## 📘 Detailed Explanation
+**What it is:** ...
+**Why it exists:** ...
+**How it works:** ...
+
+## 💻 Code Example
+\`\`\`[language]
+// working example
+\`\`\`
+
+## 🔑 Key Points
+- ...
+- ...
+---
+
+Questions to answer:
+1. [paste questions here]
+
+Topic: ${topic}
+Keep answers concise, accurate, and interview-ready.`,
+  },
+];
+
+function AdminPrompts() {
+  const [topic, setTopic] = useState("");
+  const [activeStep, setActiveStep] = useState(0);
+  const [copied, setCopied] = useState(null);
+
+  function copy(text, idx) {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(idx);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  }
+
+  const step = PROMPT_STEPS[activeStep];
+  const generatedPrompt = step.prompt(topic || "[TOPIC NAME]");
+
+  return (
+    <div className="flex h-full overflow-hidden">
+
+      {/* Left — step selector */}
+      <div className="w-56 shrink-0 border-r border-border flex flex-col">
+        <div className="px-4 py-4 border-b border-border">
+          <h2 className="text-sm font-bold text-heading mb-0.5">Content Prompts</h2>
+          <p className="text-[11px] text-muted">Copy-ready prompts for each step</p>
+        </div>
+
+        {/* Topic input */}
+        <div className="px-3 py-3 border-b border-border">
+          <label className="text-[10px] font-bold text-ghost uppercase tracking-wider block mb-1.5">Topic Name</label>
+          <input
+            value={topic}
+            onChange={e => setTopic(e.target.value)}
+            placeholder="e.g. Python, Docker…"
+            className="w-full h-8 px-3 rounded-lg bg-hover border border-border text-xs text-primary outline-none focus:border-accent transition-colors placeholder:text-ghost"
+          />
+          <p className="text-[10px] text-ghost mt-1">Fills into prompts automatically</p>
+        </div>
+
+        {/* Steps */}
+        <div className="flex-1 py-2 overflow-y-auto">
+          {PROMPT_STEPS.map((s, idx) => (
+            <button key={idx} onClick={() => setActiveStep(idx)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors cursor-pointer border-l-2 ${
+                activeStep === idx
+                  ? "border-accent bg-accent/5 text-accent"
+                  : "border-transparent text-muted hover:bg-hover hover:text-primary"
+              }`}>
+              <span className="text-base leading-none">{s.icon}</span>
+              <div className="min-w-0">
+                <p className={`text-xs font-semibold ${activeStep === idx ? "text-accent" : "text-soft"}`}>
+                  Step {s.step}
+                </p>
+                <p className="text-[10px] text-ghost truncate">{s.title}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Right — prompt display */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className={`shrink-0 px-6 py-4 border-b border-border flex items-center justify-between`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center text-xl shrink-0 ${step.color}`}>
+              {step.icon}
+            </div>
+            <div>
+              <p className="text-sm font-bold text-heading">Step {step.step}: {step.title}</p>
+              <p className="text-[11px] text-muted">{step.description}</p>
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {activeStep > 0 && (
+              <button onClick={() => setActiveStep(p => p - 1)}
+                className="h-8 px-3 rounded-lg border border-border bg-hover text-xs text-muted hover:text-primary transition-colors cursor-pointer">
+                ← Prev
+              </button>
+            )}
+            {activeStep < PROMPT_STEPS.length - 1 && (
+              <button onClick={() => setActiveStep(p => p + 1)}
+                className="h-8 px-3 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold transition-colors cursor-pointer">
+                Next →
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Step progress */}
+        <div className="shrink-0 flex items-center gap-1.5 px-6 py-2.5 border-b border-border bg-surface/40">
+          {PROMPT_STEPS.map((s, idx) => (
+            <button key={idx} onClick={() => setActiveStep(idx)}
+              className={`flex items-center gap-1.5 cursor-pointer transition-all`}>
+              <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border transition-all ${
+                idx < activeStep ? "bg-success border-success text-white"
+                : idx === activeStep ? "bg-accent border-accent text-white"
+                : "bg-hover border-border text-ghost"
+              }`}>
+                {idx < activeStep ? "✓" : idx + 1}
+              </div>
+              {idx < PROMPT_STEPS.length - 1 && (
+                <div className={`w-6 h-px ${idx < activeStep ? "bg-success" : "bg-border"}`} />
+              )}
+            </button>
+          ))}
+          <span className="ml-3 text-[11px] text-ghost">{activeStep + 1} of {PROMPT_STEPS.length}</span>
+        </div>
+
+        {/* Prompt box */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="space-y-4">
+            {/* Topic reminder */}
+            {!topic && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-warning/5 border border-warning/20">
+                <span className="text-warning text-sm">⚠</span>
+                <p className="text-xs text-warning">Enter a topic name on the left to personalize this prompt</p>
+              </div>
+            )}
+
+            {/* Prompt textarea */}
+            <div className="relative">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-ghost uppercase tracking-wider">Prompt</span>
+                <button onClick={() => copy(generatedPrompt, activeStep)}
+                  className={`flex items-center gap-1.5 h-7 px-3 rounded-lg border text-[11px] font-semibold transition-all cursor-pointer ${
+                    copied === activeStep
+                      ? "bg-success/10 border-success/30 text-success"
+                      : "bg-hover border-border text-muted hover:border-accent/40 hover:text-primary"
+                  }`}>
+                  {copied === activeStep
+                    ? <><Check size={11} strokeWidth={2.5} /> Copied!</>
+                    : <><FileText size={11} strokeWidth={1.8} /> Copy Prompt</>}
+                </button>
+              </div>
+              <pre className="w-full bg-hover border border-border rounded-xl p-4 text-xs text-primary font-mono leading-relaxed whitespace-pre-wrap overflow-x-auto">
+                {generatedPrompt}
+              </pre>
+            </div>
+
+            {/* How to use */}
+            <div className="bg-panel border border-border rounded-xl p-4">
+              <p className="text-[10px] font-bold text-ghost uppercase tracking-wider mb-2">How to use</p>
+              {activeStep === 0 && <p className="text-xs text-muted leading-relaxed">Go to <strong className="text-soft">Admin → Content → Topics</strong>, click the <strong className="text-soft">+</strong> button, fill in the details, and save. Then come back and move to Step 2.</p>}
+              {activeStep === 1 && <p className="text-xs text-muted leading-relaxed">Copy this prompt, paste it to me (Claude) in this chat. I'll generate the section names. Then go to <strong className="text-soft">Admin → Content → Sections</strong> and create each one under your topic.</p>}
+              {activeStep === 2 && <p className="text-xs text-muted leading-relaxed">Copy this prompt, paste it to me (Claude). I'll return a JSON array. Download it as a <code className="text-accent bg-accent/10 px-1 rounded">.json</code> file, then go to <strong className="text-soft">Admin → Bulk Import</strong>, select your topic + section, and upload the file.</p>}
+              {activeStep === 3 && <p className="text-xs text-muted leading-relaxed">Go to <strong className="text-soft">Admin → Content → Questions</strong>, click <strong className="text-soft">Answer</strong> on any question, copy this prompt + paste the question to me (Claude), then paste the answer into the editor and save.</p>}
+              {activeStep === 4 && <p className="text-xs text-muted leading-relaxed">Copy this prompt, paste your list of questions below it, and send to me (Claude). I'll generate all answers at once. Then paste each answer into the Answer editor in <strong className="text-soft">Admin → Content</strong>.</p>}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const NAV = [
   { id: "dashboard", label: "Dashboard",    Icon: LayoutDashboard },
   { id: "content",   label: "Content",      Icon: BookOpen        },
   { id: "import",    label: "Bulk Import",  Icon: Upload          },
   { id: "users",     label: "Users",        Icon: Users           },
   { id: "notifs",    label: "Notifications", Icon: Bell           },
+  { id: "roadmap",   label: "Roadmap",      Icon: Map             },
+  { id: "prompts",   label: "Prompts",      Icon: FileText        },
 ];
 
 function AdminLayout({ adminUser }) {
@@ -2022,6 +2621,8 @@ function AdminLayout({ adminUser }) {
         {view === "import"    && <AdminBulkImport />}
         {view === "users"     && <AdminUsers />}
         {view === "notifs"    && <AdminNotifications adminUser={adminUser} />}
+        {view === "roadmap"   && <AdminRoadmap />}
+        {view === "prompts"   && <AdminPrompts />}
       </main>
     </div>
   );
