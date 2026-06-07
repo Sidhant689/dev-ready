@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { supabase } from "../config/supabaseClient";
 import { renderMarkdown } from "../utils/markdown";
@@ -8,6 +8,7 @@ import {
   TrendingUp, Shield, Zap, Database,
   Plus, Pencil, Trash2, ChevronRight, Search,
   UserCircle, Crown, X, Eye,
+  Upload, Download, Table2, AlertTriangle,
 } from "lucide-react";
 import {
   getAdminStats, getRecentUsers,
@@ -18,6 +19,7 @@ import {
   adminGetUsers, adminGetUserStats, adminSetUserRole,
   adminGetDifficultyLevels,
   getContentHealth, getTopicPerformance,
+  adminBulkCreateQuestions,
 } from "../services/adminService";
 
 /* ── Tiny shared UI ──────────────────────────────────────────── */
@@ -1121,11 +1123,286 @@ function AdminUsers() {
   );
 }
 
+/* ── Bulk Import ─────────────────────────────────────────────── */
+function parseCsv(text) {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, "").toLowerCase());
+  return lines.slice(1).map((line, i) => {
+    // Handle quoted fields
+    const cols = [];
+    let cur = ""; let inQ = false;
+    for (let c = 0; c < line.length; c++) {
+      const ch = line[c];
+      if (ch === '"') { inQ = !inQ; }
+      else if (ch === "," && !inQ) { cols.push(cur.trim()); cur = ""; }
+      else cur += ch;
+    }
+    cols.push(cur.trim());
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = (cols[idx] || "").replace(/^"|"$/g, ""); });
+    row._index = i + 2;
+    return row;
+  });
+}
+
+function AdminBulkImport() {
+  const [topics, setTopics] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [levels, setLevels] = useState([]);
+  const [selectedTopic, setSelectedTopic] = useState("");
+  const [selectedSection, setSelectedSection] = useState("");
+  const [rows, setRows] = useState([]);
+  const [errors, setErrors] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState(null);
+  const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    adminGetTopics().then(setTopics);
+    adminGetDifficultyLevels().then(setLevels);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedTopic) { setSections([]); setSelectedSection(""); return; }
+    adminGetSections(Number(selectedTopic)).then(data => { setSections(data); setSelectedSection(""); });
+  }, [selectedTopic]);
+
+  function processFile(file) {
+    if (!file) return;
+    const ext = file.name.split(".").pop().toLowerCase();
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        let parsed = [];
+        if (ext === "json") {
+          parsed = JSON.parse(e.target.result);
+          if (!Array.isArray(parsed)) parsed = [parsed];
+        } else {
+          parsed = parseCsv(e.target.result);
+        }
+        setRows(parsed);
+        setErrors([]);
+        setResult(null);
+      } catch (err) {
+        setErrors([`Parse error: ${err.message}`]);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault(); setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    processFile(file);
+  }
+
+  function validateRows() {
+    const errs = [];
+    const levelNames = levels.map(l => l.label.toLowerCase());
+    rows.forEach((r, i) => {
+      const num = i + 1;
+      if (!r.text && !r.question) errs.push(`Row ${num}: missing "text" field`);
+      if (r.difficulty && !levelNames.includes(r.difficulty.toLowerCase()))
+        errs.push(`Row ${num}: unknown difficulty "${r.difficulty}" (valid: ${levels.map(l=>l.label).join(", ")})`);
+    });
+    return errs;
+  }
+
+  async function handleImport() {
+    if (!selectedSection) { setErrors(["Select a section first"]); return; }
+    const errs = validateRows();
+    if (errs.length) { setErrors(errs); return; }
+    setImporting(true); setErrors([]); setResult(null);
+    try {
+      const levelMap = {};
+      levels.forEach(l => { levelMap[l.label.toLowerCase()] = l.id; });
+      const payload = rows.map((r, i) => ({
+        text: (r.text || r.question || "").trim(),
+        serial_number: r.serial_number ? Number(r.serial_number) : i + 1,
+        difficulty_id: r.difficulty ? (levelMap[r.difficulty.toLowerCase()] || null) : null,
+        section_id: Number(selectedSection),
+      })).filter(r => r.text);
+      const created = await adminBulkCreateQuestions(payload);
+      setResult({ count: created.length });
+      setRows([]);
+    } catch (err) {
+      setErrors([err.message]);
+    }
+    setImporting(false);
+  }
+
+  function downloadTemplate() {
+    const csv = `serial_number,text,difficulty\n1,"What is dependency injection?",Basic\n2,"Explain SOLID principles",Intermediate\n3,"What is the difference between abstract class and interface?",Advanced`;
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = "devready_import_template.csv"; a.click();
+  }
+
+  return (
+    <div className="p-6 space-y-6 overflow-y-auto h-full">
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-heading">Bulk Import Questions</h1>
+          <p className="text-sm text-muted mt-0.5">Upload a CSV or JSON file to add multiple questions at once</p>
+        </div>
+        <button onClick={downloadTemplate}
+          className="flex items-center gap-2 h-9 px-4 rounded-lg bg-hover border border-border text-xs font-semibold text-muted hover:text-primary hover:border-accent/30 transition-all cursor-pointer">
+          <Download size={13} strokeWidth={1.8} />
+          Download Template
+        </button>
+      </div>
+
+      {/* Format guide */}
+      <div className="bg-panel border border-border rounded-xl p-5">
+        <p className="text-xs font-semibold text-soft mb-3 flex items-center gap-2">
+          <Table2 size={13} strokeWidth={1.8} className="text-accent" />
+          Expected Format
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase text-ghost mb-1.5">CSV columns</p>
+            {[
+              { col: "text", desc: "Question text (required)", req: true },
+              { col: "serial_number", desc: "Order in section (auto if omitted)", req: false },
+              { col: "difficulty", desc: "Basic / Intermediate / Advanced", req: false },
+            ].map(({ col, desc, req }) => (
+              <div key={col} className="flex items-start gap-2 mb-1">
+                <code className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${req ? "bg-accent/10 text-accent" : "bg-hover text-muted"}`}>{col}</code>
+                <span className="text-[11px] text-muted">{desc}</span>
+              </div>
+            ))}
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase text-ghost mb-1.5">JSON format</p>
+            <pre className="text-[11px] text-muted bg-hover/60 rounded-lg p-3 font-mono overflow-auto">{`[
+  {
+    "text": "What is C#?",
+    "difficulty": "Basic",
+    "serial_number": 1
+  }
+]`}</pre>
+          </div>
+        </div>
+      </div>
+
+      {/* Section selector */}
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-soft">Topic <span className="text-danger">*</span></span>
+          <select value={selectedTopic} onChange={e => setSelectedTopic(e.target.value)}
+            className="h-9 px-3 rounded-lg bg-panel border border-border text-primary text-sm outline-none focus:border-accent cursor-pointer">
+            <option value="">— Select topic —</option>
+            {topics.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-soft">Section <span className="text-danger">*</span></span>
+          <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)}
+            disabled={!selectedTopic}
+            className="h-9 px-3 rounded-lg bg-panel border border-border text-primary text-sm outline-none focus:border-accent cursor-pointer disabled:opacity-40">
+            <option value="">— Select section —</option>
+            {sections.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+          </select>
+        </label>
+      </div>
+
+      {/* Drop zone */}
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+        onClick={() => fileRef.current?.click()}
+        className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all ${
+          dragOver ? "border-accent bg-accent/5" : "border-border hover:border-accent/40 hover:bg-hover/30"
+        }`}
+      >
+        <input ref={fileRef} type="file" accept=".csv,.json" className="hidden"
+          onChange={e => processFile(e.target.files[0])} />
+        <Upload size={28} className="text-ghost mx-auto mb-3" strokeWidth={1.5} />
+        <p className="text-sm font-semibold text-soft">Drop CSV or JSON file here</p>
+        <p className="text-xs text-muted mt-1">or click to browse</p>
+        <p className="text-[10px] text-ghost mt-3">Supports .csv and .json files</p>
+      </div>
+
+      {/* Errors */}
+      {errors.length > 0 && (
+        <div className="bg-danger/5 border border-danger/20 rounded-xl p-4 space-y-1">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle size={13} className="text-danger" strokeWidth={2} />
+            <p className="text-xs font-semibold text-danger">Issues found</p>
+          </div>
+          {errors.map((e, i) => <p key={i} className="text-xs text-danger/80 pl-5">{e}</p>)}
+        </div>
+      )}
+
+      {/* Success */}
+      {result && (
+        <div className="bg-success/5 border border-success/20 rounded-xl p-4 flex items-center gap-3">
+          <CheckCircle size={16} className="text-success" strokeWidth={2} />
+          <p className="text-sm font-semibold text-success">
+            Successfully imported {result.count} question{result.count !== 1 ? "s" : ""}!
+          </p>
+        </div>
+      )}
+
+      {/* Preview table */}
+      {rows.length > 0 && (
+        <div className="bg-panel border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <Table2 size={13} className="text-accent" strokeWidth={1.8} />
+              <p className="text-sm font-semibold text-soft">Preview — {rows.length} rows</p>
+            </div>
+            <button
+              onClick={handleImport}
+              disabled={importing || !selectedSection}
+              className="flex items-center gap-2 h-8 px-4 rounded-lg bg-accent hover:bg-accent-hover text-white text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Upload size={12} strokeWidth={2.5} />
+              {importing ? "Importing…" : `Import ${rows.length} Questions`}
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="border-b border-border bg-hover/30">
+                <tr>
+                  <th className="text-left px-4 py-2.5 text-ghost font-semibold uppercase tracking-wide w-10">#</th>
+                  <th className="text-left px-4 py-2.5 text-ghost font-semibold uppercase tracking-wide">Question Text</th>
+                  <th className="text-left px-4 py-2.5 text-ghost font-semibold uppercase tracking-wide w-28">Difficulty</th>
+                  <th className="text-left px-4 py-2.5 text-ghost font-semibold uppercase tracking-wide w-16">Serial</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 50).map((r, i) => (
+                  <tr key={i} className="border-b border-border/40 hover:bg-hover/20">
+                    <td className="px-4 py-2.5 text-ghost tabular-nums">{i + 1}</td>
+                    <td className="px-4 py-2.5 text-primary leading-snug max-w-lg">
+                      {(r.text || r.question || "").slice(0, 120)}{(r.text || r.question || "").length > 120 ? "…" : ""}
+                    </td>
+                    <td className="px-4 py-2.5 text-muted">{r.difficulty || "—"}</td>
+                    <td className="px-4 py-2.5 text-muted tabular-nums">{r.serial_number || i + 1}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rows.length > 50 && (
+              <p className="text-xs text-ghost text-center py-3">Showing first 50 of {rows.length} rows</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Admin Layout ────────────────────────────────────────────── */
 const NAV = [
-  { id: "dashboard", label: "Dashboard", Icon: LayoutDashboard },
-  { id: "content",   label: "Content",   Icon: BookOpen        },
-  { id: "users",     label: "Users",     Icon: Users           },
+  { id: "dashboard", label: "Dashboard",    Icon: LayoutDashboard },
+  { id: "content",   label: "Content",      Icon: BookOpen        },
+  { id: "import",    label: "Bulk Import",  Icon: Upload          },
+  { id: "users",     label: "Users",        Icon: Users           },
 ];
 
 function AdminLayout({ adminUser }) {
@@ -1190,6 +1467,7 @@ function AdminLayout({ adminUser }) {
       <main className="flex-1 overflow-hidden">
         {view === "dashboard" && <AdminDashboard />}
         {view === "content"   && <AdminContent />}
+        {view === "import"    && <AdminBulkImport />}
         {view === "users"     && <AdminUsers />}
       </main>
     </div>

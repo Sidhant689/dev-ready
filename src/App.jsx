@@ -7,12 +7,14 @@ import { useWeeklyGoal } from "./hooks/useWeeklyGoal";
 import { useBookmarks } from "./hooks/useBookmarks";
 import { useUserSettings } from "./hooks/useUserSettings";
 import { qKey } from "./utils/helpers";
-import { fetchTopics, fetchSections, fetchQuestions } from "./services/questionService";
+import { fetchTopics, fetchSections, fetchQuestions, fetchQuestionById } from "./services/questionService";
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
 import QuestionList from "./components/QuestionList";
 import QuestionDetail from "./components/QuestionDetail";
 import Dashboard from "./pages/Dashboard";
+import QuizMode from "./pages/QuizMode";
+import InterviewSim from "./pages/InterviewSim";
 import SectionPicker from "./pages/SectionPicker";
 import LandingPage from "./pages/LandingPage";
 import AuthModal from "./components/AuthModal";
@@ -54,6 +56,8 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [simOpen, setSimOpen] = useState(false);
 
   const [sectionQuestions, setSectionQuestions] = useState([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -91,6 +95,35 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   useEffect(() => {
     fetchTopics().then(setTopics).catch(console.error);
   }, []);
+
+  // Handle ?q=ID share URLs
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const qId = params.get("q");
+    if (!qId) return;
+    // Remove param from URL without reload
+    const url = new URL(window.location.href);
+    url.searchParams.delete("q");
+    window.history.replaceState({}, "", url.toString());
+    // Navigate to the shared question
+    fetchQuestionById(Number(qId)).then(async (qData) => {
+      if (!qData) return;
+      const sectionId = qData.sections?.id;
+      if (!sectionId) return;
+      const topicId = qData.sections?.topic_id;
+      const sections = await fetchSections(topicId);
+      setTopicSections(prev => ({ ...prev, [topicId]: sections }));
+      const foundSection = sections.find(s => s.id === sectionId);
+      const foundTopic = topics.find(t => t.id === topicId);
+      if (foundSection) {
+        if (foundTopic) setActiveTopic(foundTopic);
+        setActiveSection(foundSection);
+        openQuestion(foundSection, { id: qData.id, text: qData.text, difficulty_levels: qData.difficulty_levels });
+      }
+    }).catch(() => {});
+  // Run once after topics load
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topics.length]);
 
   useEffect(() => {
     if (!activeSection) { setSectionQuestions([]); return; }
@@ -387,6 +420,8 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
               bookmarks={bookmarks}
               onSelectTopic={handleTopicClick}
               onSelectBookmark={handleBookmarkNav}
+              onStartQuiz={() => setQuizOpen(true)}
+              onStartInterview={() => setSimOpen(true)}
             />
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center px-8">
@@ -416,6 +451,22 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
           onClose={() => setSearchOpen(false)}
           isGuest={isGuest}
           onOpenAuth={onOpenAuth}
+        />
+      )}
+
+      {quizOpen && (
+        <QuizMode
+          topics={topics}
+          user={user}
+          onClose={() => setQuizOpen(false)}
+        />
+      )}
+
+      {simOpen && (
+        <InterviewSim
+          topics={topics}
+          user={user}
+          onClose={() => setSimOpen(false)}
         />
       )}
 

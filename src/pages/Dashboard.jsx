@@ -2,7 +2,7 @@ import { useMemo, useEffect, useState } from "react";
 import {
   CheckCircle, Flame, Target, Trophy, Star, ArrowRight,
   Zap, BookOpen, TrendingUp, Award, Lock, Calendar,
-  ChevronRight, GitCommit, Lightbulb, BarChart2, Clock,
+  ChevronRight, GitCommit, Lightbulb, BarChart2, Clock, Timer,
 } from "lucide-react";
 import TopicIcon from "../components/TopicIcon";
 import { fetchUserActivity } from "../services/questionService";
@@ -620,9 +620,11 @@ function heroMessage({ totalDone, totalAll, streak, weekDone, weekGoal, topics, 
 export default function Dashboard({
   user, topics, donePerTopic, totalDone, totalAll,
   streak, weekDone, weekGoal, bookmarks, onSelectTopic, onSelectBookmark,
+  onStartQuiz, onStartInterview,
 }) {
   const [activityMap, setActivityMap] = useState({});
   const [heatmapLoading, setHeatmapLoading] = useState(true);
+  const [badgeToast, setBadgeToast] = useState(null);
 
   useEffect(() => {
     if (!user?.id) { setHeatmapLoading(false); return; }
@@ -643,11 +645,50 @@ export default function Dashboard({
     [topics, donePerTopic]
   );
 
+  // Badge unlock toast notifications
+  useEffect(() => {
+    if (totalDone === 0 && streak === 0 && topicsMastered === 0) return;
+    const ctx = { totalDone, streak, topicsMastered };
+    let stored;
+    try { stored = new Set(JSON.parse(localStorage.getItem("devready_badges") || "[]")); }
+    catch { stored = new Set(); }
+    const newlyUnlocked = ACHIEVEMENT_DEFS.filter(a => a.req(ctx) && !stored.has(a.id));
+    if (newlyUnlocked.length > 0) {
+      const updated = new Set([...stored, ...newlyUnlocked.map(a => a.id)]);
+      localStorage.setItem("devready_badges", JSON.stringify([...updated]));
+      setBadgeToast(newlyUnlocked[0]); // show first new badge
+    }
+  }, [totalDone, streak, topicsMastered]);
+
   const overallPct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
   const message = heroMessage({ totalDone, totalAll, streak, weekDone, weekGoal, topics, donePerTopic });
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div className="flex-1 overflow-y-auto relative">
+
+      {/* ── Badge unlock toast ───────────────────────────────────── */}
+      {badgeToast && (() => {
+        const Icon = badgeToast.icon;
+        return (
+          <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-panel border border-accent/30 rounded-2xl px-4 py-3 shadow-xl"
+            style={{ animation: "slideInRight 0.3s ease-out", boxShadow: "0 0 24px rgba(99,102,241,0.2)" }}>
+            <div className="w-10 h-10 rounded-xl bg-accent/15 border border-accent/25 flex items-center justify-center shrink-0">
+              <Icon size={18} strokeWidth={1.7} className="text-accent" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold text-ghost uppercase tracking-wide">Badge unlocked!</p>
+              <p className="text-sm font-semibold text-heading">{badgeToast.label}</p>
+              <p className="text-[11px] text-muted">{badgeToast.desc}</p>
+            </div>
+            <button onClick={() => setBadgeToast(null)}
+              className="w-6 h-6 rounded-md text-ghost hover:text-muted flex items-center justify-center cursor-pointer shrink-0 ml-1">
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ── Hero Banner ─────────────────────────────────────────── */}
       <div className="px-6 py-6 border-b border-border"
@@ -674,6 +715,21 @@ export default function Dashboard({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* ── Practice Modes ──────────────────────────────────────── */}
+      <div className="px-6 py-3 border-b border-border flex items-center gap-3">
+        <span className="text-[10px] font-bold tracking-widest uppercase text-ghost">Practice</span>
+        <button onClick={onStartQuiz}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/10 border border-accent/20 text-accent text-xs font-semibold hover:bg-accent/20 transition-all cursor-pointer">
+          <Zap size={12} strokeWidth={2} />
+          Quiz Mode
+        </button>
+        <button onClick={onStartInterview}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-warning/10 border border-warning/20 text-warning text-xs font-semibold hover:bg-warning/20 transition-all cursor-pointer">
+          <Timer size={12} strokeWidth={2} />
+          Interview Sim
+        </button>
       </div>
 
       <div className="p-6 space-y-6">

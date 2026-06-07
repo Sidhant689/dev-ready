@@ -122,23 +122,53 @@ input::placeholder { color: #475569; }
   border: 1px solid rgba(99,102,241,0.2);
 }
 
-/* Code blocks */
+/* Code blocks — VS Code Dark+ style */
 .prose-answer pre {
-  background: #0d1526;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 1.25rem 1.5rem;
-  overflow-x: auto;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 10px;
+  padding: 0;
+  overflow: hidden;
   margin: 1.5rem 0;
+  position: relative;
 }
 
+/* Language label */
+.prose-answer pre[data-lang]::before {
+  content: attr(data-lang);
+  display: block;
+  padding: 6px 16px;
+  background: #2d2d2d;
+  border-bottom: 1px solid #3a3a3a;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #858585;
+  font-family: var(--font-mono);
+}
+
+.prose-answer pre[data-lang=""]::before { display: none; }
+
 .prose-answer pre code {
+  display: block;
   background: transparent;
   border: none;
-  padding: 0;
-  color: #e2e8f0;
+  padding: 1.25rem 1.5rem;
+  color: #d4d4d4;
   font-size: 13px;
-  line-height: 1.7;
+  line-height: 1.75;
+  overflow-x: auto;
+  tab-size: 2;
+  /* ensure highlight spans override nothing */
+  white-space: pre;
+  word-break: normal;
+}
+
+/* Light theme keeps the VS Code dark bg — intentional, like VS Code in light UI */
+[data-theme="light"] .prose-answer pre {
+  background: #1e1e1e;
+  border-color: #3a3a3a;
 }
 
 /* Lists */

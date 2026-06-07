@@ -36,7 +36,7 @@ export async function fetchSections(topicId) {
 export async function fetchQuestions(sectionId) {
   const { data, error } = await supabase
     .from("questions")
-    .select("*, difficulty_levels(slug, label, bg_color, text_color)")
+    .select("*, difficulty_levels(slug, label, bg_color, text_color), companies")
     .eq("section_id", sectionId)
     .order("serial_number");
 
@@ -155,6 +155,36 @@ async function getTopicStats(topicId) {
     total_count: questions?.length ?? 0,
     done_count: 0,
   };
+}
+
+// ✅ NEW: Fetch random questions for quiz/interview sim
+export async function fetchRandomQuestions(topicIds = [], count = 10) {
+  let query = supabase
+    .from("questions")
+    .select("id, text, section_id, difficulty_id, difficulty_levels(label), sections!inner(id, topic_id)")
+    .limit(500);
+
+  if (topicIds.length > 0) {
+    query = query.in("sections.topic_id", topicIds);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  // Shuffle and take count
+  const shuffled = (data ?? []).sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+// ✅ NEW: Fetch question by ID (for share URL)
+export async function fetchQuestionById(questionId) {
+  const { data, error } = await supabase
+    .from("questions")
+    .select("id, text, difficulty_id, difficulty_levels(label), sections(id, label, topic_id, topics(label))")
+    .eq("id", questionId)
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 // ✅ NEW: Fetch activity heatmap data (26 weeks back)

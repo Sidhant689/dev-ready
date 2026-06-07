@@ -1,9 +1,11 @@
 import { useEffect, useRef, useMemo, useState } from "react";
-import { Lock, FileText } from "lucide-react";
+import { Lock, FileText, Sparkles, Share2 } from "lucide-react";
 import { renderMarkdown } from "../utils/markdown";
 import Badge from "./ui/Badge";
 import Spinner from "./ui/Spinner";
 import { useNotes } from "../hooks/useNotes";
+import { explainDifferently } from "../services/aiService";
+import { useSpacedRepetition } from "../hooks/useSpacedRepetition";
 
 // Guests can freely read the first N questions in any section
 export const GUEST_FREE_LIMIT = 3;
@@ -137,11 +139,48 @@ export default function QuestionDetail({
   const [tab, setTab] = useState("answer"); // "answer" | "notes"
   const [interviewMode, setInterviewMode] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [srRated, setSrRated] = useState(null);
+  const { rate: rateSpacedRep } = useSpacedRepetition(user);
 
   useEffect(() => {
     if (answerRef.current) answerRef.current.scrollTop = 0;
-    setRevealed(false); // hide answer when switching question in interview mode
+    setRevealed(false);
+    setAiExplanation(null); setAiOpen(false); setAiError(null);
+    setSrRated(null);
   }, [activeQ?.id]);
+
+  async function handleSrRate(rating) {
+    setSrRated(rating);
+    await rateSpacedRep(activeQ.id, rating).catch(() => {});
+    // also mark status
+    if (rating >= 2) onSaveStatus(activeKey, "Done");
+    else onSaveStatus(activeKey, "In Progress");
+  }
+
+  async function handleAiExplain() {
+    if (aiExplanation) { setAiOpen(v => !v); return; }
+    setAiOpen(true); setAiLoading(true); setAiError(null);
+    try {
+      const text = await explainDifferently(activeQ.text, answer);
+      setAiExplanation(text);
+    } catch (e) {
+      setAiError(e.message);
+    }
+    setAiLoading(false);
+  }
+
+  function handleShare() {
+    const url = `${window.location.origin}${window.location.pathname}?q=${activeQ.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
 
   // Reset interview mode reveal when toggling the mode on
   useEffect(() => {
@@ -366,18 +405,92 @@ export default function QuestionDetail({
                     {interviewMode && revealed && (
                       <div className="flex items-center justify-between mb-4 p-3 bg-success/5 border border-success/20 rounded-lg">
                         <span className="text-xs text-success font-medium">✓ Answer revealed</span>
-                        <button
-                          className="text-xs text-ghost hover:text-muted cursor-pointer"
-                          onClick={() => setRevealed(false)}
-                        >
+                        <button className="text-xs text-ghost hover:text-muted cursor-pointer" onClick={() => setRevealed(false)}>
                           Hide again
                         </button>
                       </div>
                     )}
-                    <div
-                      className="prose-answer"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }}
-                    />
+                    <div className="prose-answer" dangerouslySetInnerHTML={{ __html: renderMarkdown(answer) }} />
+
+                    {/* ── Spaced Repetition Rating ── */}
+                    {!isGuest && (
+                      <div className="mt-6 pt-5 border-t border-border">
+                        <p className="text-[11px] font-semibold text-ghost mb-2 uppercase tracking-wide">How well did you know this?</p>
+                        <div className="flex items-center gap-2">
+                          {[
+                            { label: "Again",  rating: 0, cls: "border-danger/40 text-danger hover:bg-danger/10",   sub: "< 1 day" },
+                            { label: "Hard",   rating: 1, cls: "border-warning/40 text-warning hover:bg-warning/10", sub: "1 day"   },
+                            { label: "Good",   rating: 2, cls: "border-accent/40 text-accent hover:bg-accent/10",   sub: "6 days"  },
+                            { label: "Easy",   rating: 3, cls: "border-success/40 text-success hover:bg-success/10", sub: "varies"  },
+                          ].map(({ label, rating, cls, sub }) => (
+                            <button
+                              key={label}
+                              onClick={() => handleSrRate(rating)}
+                              className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                                srRated === rating
+                                  ? cls.replace("hover:", "") + " opacity-100"
+                                  : `bg-hover border-border text-muted ${cls}`
+                              } ${srRated !== null && srRated !== rating ? "opacity-40" : ""}`}
+                            >
+                              {label}
+                              <span className="text-[9px] font-normal opacity-70">{sub}</span>
+                            </button>
+                          ))}
+                          {srRated !== null && (
+                            <span className="text-[11px] text-muted ml-2">
+                              {srRated >= 2 ? "✓ Scheduled for review" : "✓ Will review tomorrow"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── AI Explain + Share ── */}
+                    <div className="flex items-center gap-2 mt-8 pt-6 border-t border-border">
+                      <button
+                        onClick={handleAiExplain}
+                        className={`flex items-center gap-1.5 h-8 px-3 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                          aiOpen ? "bg-violet-500/10 border-violet-500/30 text-violet-400" : "bg-hover border-border text-muted hover:text-primary hover:border-accent/30"
+                        }`}
+                      >
+                        <Sparkles size={12} strokeWidth={2} />
+                        {aiOpen && aiExplanation ? "Hide AI" : "Explain differently"}
+                      </button>
+                      <button
+                        onClick={handleShare}
+                        className="flex items-center gap-1.5 h-8 px-3 rounded-lg border border-border bg-hover text-xs font-medium text-muted hover:text-primary hover:border-accent/30 transition-all cursor-pointer"
+                      >
+                        <Share2 size={12} strokeWidth={2} />
+                        {copied ? "Copied!" : "Share"}
+                      </button>
+                    </div>
+
+                    {/* AI panel */}
+                    {aiOpen && (
+                      <div className="mt-4 rounded-xl border border-violet-500/25 bg-violet-500/5 overflow-hidden">
+                        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-violet-500/15">
+                          <Sparkles size={12} strokeWidth={2} className="text-violet-400" />
+                          <span className="text-xs font-semibold text-violet-400">AI Explanation</span>
+                        </div>
+                        <div className="px-4 py-4">
+                          {aiLoading && (
+                            <div className="flex items-center gap-2 text-xs text-muted">
+                              <div className="w-3 h-3 rounded-full border border-violet-400 border-t-transparent" style={{ animation: "spin 0.8s linear infinite" }} />
+                              Generating explanation…
+                            </div>
+                          )}
+                          {aiError && (
+                            <div className="flex items-center gap-2 text-xs text-muted/70 italic">
+                              <Sparkles size={11} strokeWidth={1.8} className="text-violet-400/50 shrink-0" />
+                              AI explanations are coming soon — check back later.
+                            </div>
+                          )}
+                          {aiExplanation && (
+                            <p className="text-sm text-primary leading-relaxed whitespace-pre-wrap">{aiExplanation}</p>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </>

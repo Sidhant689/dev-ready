@@ -53,23 +53,212 @@ function replaceInlineEmoji(text) {
   return text.replace(INLINE_EMOJI_PATTERN, (match) => INLINE_EMOJI_MAP[match] || match);
 }
 
+// ─── Syntax highlighter (VS Code Dark+ palette) ───────────────────────────────
+
+// Colors mirror VS Code's Dark+ theme
+const C = {
+  keyword:  "#569CD6", // blue       — if, for, class, public …
+  control:  "#C586C0", // pink       — return, break, continue, yield
+  type:     "#4EC9B0", // teal       — int, string, bool, void, List …
+  string:   "#CE9178", // orange     — "…" '…' `…`
+  comment:  "#6A9955", // green      — // /* */
+  number:   "#B5CEA8", // mint       — 42, 3.14, 0xFF
+  fn:       "#DCDCAA", // yellow     — function calls
+  prop:     "#9CDCFE", // light blue — .property, @decorator
+  punct:    "#D4D4D4", // white-grey — brackets, operators
+  tag:      "#4EC9B0", // teal       — HTML/JSX tags
+  attr:     "#9CDCFE", // light blue — HTML attributes
+  plain:    "#D4D4D4", // default text
+};
+
+// Language keyword sets
+const KEYWORDS = {
+  csharp: {
+    control:  /\b(return|break|continue|throw|yield|await|goto)\b/g,
+    keyword:  /\b(public|private|protected|internal|static|abstract|virtual|override|sealed|readonly|const|new|this|base|using|namespace|class|interface|struct|enum|record|delegate|event|partial|async|var|in|out|ref|params|get|set|init|value|where|from|select|group|orderby|join|on|equals|into|let|by|ascending|descending)\b/g,
+    type:     /\b(int|long|short|byte|sbyte|uint|ulong|ushort|float|double|decimal|bool|char|string|object|void|dynamic|Task|List|Dictionary|IEnumerable|IList|ICollection|Array|Tuple|Nullable|Action|Func|Type|Exception|StringBuilder|DateTime|Guid|Stream)\b/g,
+  },
+  java: {
+    control:  /\b(return|break|continue|throw|throws)\b/g,
+    keyword:  /\b(public|private|protected|static|final|abstract|synchronized|volatile|transient|native|new|this|super|import|package|class|interface|extends|implements|enum|instanceof|try|catch|finally|if|else|for|while|do|switch|case|default)\b/g,
+    type:     /\b(int|long|short|byte|float|double|boolean|char|void|String|Object|Integer|Long|Double|Boolean|List|Map|Set|Array|ArrayList|HashMap|HashSet|Optional|Stream|CompletableFuture|Thread|Runnable|Exception)\b/g,
+  },
+  javascript: {
+    control:  /\b(return|break|continue|throw|yield|await)\b/g,
+    keyword:  /\b(const|let|var|function|class|extends|new|this|super|import|export|default|from|of|in|async|if|else|for|while|do|switch|case|try|catch|finally|typeof|instanceof|delete|void|static|get|set)\b/g,
+    type:     /\b(Promise|Array|Object|String|Number|Boolean|Map|Set|WeakMap|WeakSet|Symbol|BigInt|Date|RegExp|Error|JSON|Math|console|undefined|null|NaN|Infinity)\b/g,
+  },
+  typescript: {
+    control:  /\b(return|break|continue|throw|yield|await)\b/g,
+    keyword:  /\b(const|let|var|function|class|interface|type|enum|extends|implements|new|this|super|import|export|default|from|of|in|async|if|else|for|while|do|switch|case|try|catch|finally|typeof|instanceof|keyof|readonly|as|is|infer|never|declare|namespace|abstract|override|satisfies|using|static|get|set|public|private|protected)\b/g,
+    type:     /\b(Promise|Array|Object|string|number|boolean|any|unknown|void|never|null|undefined|Map|Set|Record|Partial|Required|Readonly|Pick|Omit|Exclude|Extract|ReturnType|Parameters|ConstructorParameters|InstanceType|NonNullable|Date|RegExp|Error)\b/g,
+  },
+  python: {
+    control:  /\b(return|break|continue|raise|yield|pass)\b/g,
+    keyword:  /\b(def|class|import|from|as|with|if|elif|else|for|while|try|except|finally|and|or|not|in|is|lambda|nonlocal|global|del|assert|async|await|property|staticmethod|classmethod)\b/g,
+    type:     /\b(int|float|str|bool|list|dict|set|tuple|None|True|False|bytes|bytearray|complex|range|type|object|super|Exception|TypeError|ValueError|KeyError|IndexError|AttributeError|print|len|range|enumerate|zip|map|filter|sorted|reversed|open|any|all|min|max|sum|abs)\b/g,
+  },
+  sql: {
+    control:  /\b(RETURN|BREAK)\b/gi,
+    keyword:  /\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|ON|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|ALTER|DROP|TABLE|INDEX|VIEW|DATABASE|SCHEMA|CONSTRAINT|PRIMARY KEY|FOREIGN KEY|UNIQUE|NOT NULL|DEFAULT|CHECK|AS|DISTINCT|UNION|ALL|EXISTS|IN|BETWEEN|LIKE|IS|NULL|AND|OR|NOT|CASE|WHEN|THEN|ELSE|END)\b/gi,
+    type:     /\b(INT|INTEGER|BIGINT|SMALLINT|TINYINT|DECIMAL|NUMERIC|FLOAT|REAL|DOUBLE|VARCHAR|CHAR|TEXT|NVARCHAR|NCHAR|DATE|TIME|DATETIME|TIMESTAMP|BOOLEAN|BOOL|JSON|UUID|SERIAL|AUTOINCREMENT)\b/gi,
+  },
+  cpp: {
+    control:  /\b(return|break|continue|throw|goto)\b/g,
+    keyword:  /\b(public|private|protected|class|struct|enum|namespace|using|template|typename|virtual|override|final|const|static|inline|explicit|mutable|volatile|extern|new|delete|this|operator|if|else|for|while|do|switch|case|try|catch|include|define|ifdef|endif|auto)\b/g,
+    type:     /\b(int|long|short|char|float|double|bool|void|unsigned|signed|size_t|string|vector|map|set|pair|array|list|queue|stack|unique_ptr|shared_ptr|weak_ptr|nullptr|true|false)\b/g,
+  },
+};
+// aliases
+KEYWORDS.js = KEYWORDS.javascript;
+KEYWORDS.ts = KEYWORDS.typescript;
+KEYWORDS.cs = KEYWORDS.csharp;
+KEYWORDS.py = KEYWORDS.python;
+KEYWORDS.c  = KEYWORDS.cpp;
+
+function span(color, text) {
+  return `<span style="color:${color}">${text}</span>`;
+}
+
+function highlight(code, lang) {
+  const norm = (lang || "").toLowerCase();
+
+  // Escape HTML first
+  let out = code
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  // For unknown languages, return plain escaped text
+  const kw = KEYWORDS[norm];
+
+  // We tokenize by splitting into "safe" chunks so we don't double-process.
+  // Strategy: collect all token ranges, sort, then reassemble with spans.
+
+  const tokens = []; // { start, end, color, priority }
+
+  function addTokens(regex, color, priority = 0) {
+    let m;
+    regex.lastIndex = 0;
+    while ((m = regex.exec(out)) !== null) {
+      tokens.push({ start: m.index, end: m.index + m[0].length, color, text: m[0], priority });
+    }
+  }
+
+  // 1. Comments (highest priority — must not be re-highlighted inside)
+  addTokens(/\/\/[^\n]*/g,          C.comment, 10);
+  addTokens(/\/\*[\s\S]*?\*\//g,    C.comment, 10);
+  if (norm === "python" || norm === "py") {
+    addTokens(/#[^\n]*/g,           C.comment, 10);
+    addTokens(/"""[\s\S]*?"""/g,    C.string,  9);
+    addTokens(/'''[\s\S]*?'''/g,    C.string,  9);
+    addTokens(/--[^\n]*/g,          C.comment, 10);
+  }
+  if (norm === "sql") {
+    addTokens(/--[^\n]*/g,          C.comment, 10);
+  }
+
+  // 2. Strings
+  addTokens(/"(?:[^"\\]|\\.)*"/g,   C.string, 9);
+  addTokens(/'(?:[^'\\]|\\.)*'/g,   C.string, 9);
+  addTokens(/`(?:[^`\\]|\\.)*`/g,   C.string, 9);
+
+  // 3. Numbers
+  addTokens(/\b0x[0-9a-fA-F]+[lLuUmM]?\b/g, C.number, 5);
+  addTokens(/\b\d+\.?\d*[fFdDlLmMuU]?\b/g,  C.number, 5);
+
+  // 4. Language keywords (only if known)
+  if (kw) {
+    addTokens(new RegExp(kw.control.source, kw.control.flags),  C.control, 4);
+    addTokens(new RegExp(kw.keyword.source, kw.keyword.flags),  C.keyword, 3);
+    addTokens(new RegExp(kw.type.source,    kw.type.flags),     C.type,    3);
+  }
+
+  // 5. Function / method calls — word immediately followed by (
+  addTokens(/\b([a-zA-Z_]\w*)(?=\s*\()/g, C.fn, 2);
+
+  // 6. Decorators / annotations (@something)
+  addTokens(/@[a-zA-Z_]\w*/g, C.prop, 2);
+
+  // 7. Object properties (.something)
+  addTokens(/\.\b([a-zA-Z_]\w*)\b/g, C.prop, 1);
+
+  // Sort tokens by start position; when overlapping, higher priority wins
+  tokens.sort((a, b) => a.start - b.start || b.priority - a.priority);
+
+  // Merge: skip tokens that overlap a higher-priority (earlier accepted) token
+  const accepted = [];
+  let cursor = 0;
+  for (const t of tokens) {
+    if (t.start < cursor) continue; // overlaps previous accepted token
+    accepted.push(t);
+    cursor = t.end;
+  }
+
+  // Reassemble the string
+  let result = "";
+  let pos = 0;
+  for (const t of accepted) {
+    if (t.start > pos) result += out.slice(pos, t.start);
+    result += span(t.color, out.slice(t.start, t.end));
+    pos = t.end;
+  }
+  result += out.slice(pos);
+
+  return result;
+}
+
 export function renderMarkdown(raw) {
   if (!raw) return "";
 
-  let text = raw;
+  // Normalize line endings (Windows \r\n → \n)
+  let text = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const blocks = {};
   let bi = 0;
 
-  // ── Fenced code blocks (preserve as-is, styled by .prose-answer pre) ──
-  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _lang, code) => {
-    const k = `__CB${bi++}__`;
-    const esc = code.trim()
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-    blocks[k] = `<pre><code>${esc}</code></pre>`;
-    return k;
-  });
+  // ── Fenced code blocks — line-by-line parser (robust, like marked.js) ─
+  {
+    const srcLines = text.split("\n");
+    const out = [];
+    let inFence = false;
+    let lang = "";
+    let codeLines = [];
+
+    for (const line of srcLines) {
+      if (!inFence) {
+        // Opening fence: line starts with ``` (may have lang + anything after)
+        const open = line.match(/^```(\w*)/);
+        if (open) {
+          inFence = true;
+          lang = open[1] || "";
+          codeLines = [];
+        } else {
+          out.push(line);
+        }
+      } else {
+        // Closing fence: line starts with ``` (possibly with trailing spaces)
+        if (/^```\s*$/.test(line)) {
+          const k = `__CB${bi++}__`;
+          blocks[k] = `<pre data-lang="${lang}"><code>${highlight(codeLines.join("\n"), lang)}</code></pre>`;
+          out.push(k);
+          inFence = false;
+          lang = "";
+          codeLines = [];
+        } else {
+          codeLines.push(line);
+        }
+      }
+    }
+
+    // Unclosed fence — render as plain pre
+    if (inFence && codeLines.length) {
+      const k = `__CB${bi++}__`;
+      blocks[k] = `<pre data-lang="${lang}"><code>${highlight(codeLines.join("\n"), lang)}</code></pre>`;
+      out.push(k);
+    }
+
+    text = out.join("\n");
+  }
 
   // ── Inline code ──
   text = text.replace(/`([^`\n]+)`/g, (_, c) => {

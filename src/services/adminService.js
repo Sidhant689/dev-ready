@@ -161,6 +161,17 @@ export async function adminSetUserRole(userId, role) {
   if (error) throw new Error(error.message);
 }
 
+// ── Bulk import ───────────────────────────────────────────────
+export async function adminBulkCreateQuestions(rows) {
+  // rows: [{ text, serial_number, difficulty_id, section_id }]
+  const { data, error } = await supabase
+    .from("questions")
+    .insert(rows)
+    .select("id");
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 // ── Content health + topic performance ───────────────────────
 export async function getContentHealth() {
   const [{ count: totalQ }, { count: totalA }] = await Promise.all([

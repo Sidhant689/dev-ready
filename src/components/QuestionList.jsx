@@ -42,6 +42,7 @@ export default function QuestionList({
 }) {
   const [search, setSearch] = useState("");
   const [lvlFilter, setLvlFilter] = useState("All");
+  const [companyFilter, setCompanyFilter] = useState(null);
   const [levels, setLevels] = useState(["All"]);
 
   useEffect(() => {
@@ -51,15 +52,23 @@ export default function QuestionList({
   useEffect(() => {
     setSearch("");
     setLvlFilter("All");
+    setCompanyFilter(null);
   }, [activeSection?.id]);
+
+  const allCompanies = useMemo(() => {
+    const set = new Set();
+    questions.forEach(q => (q.companies || []).forEach(c => set.add(c)));
+    return [...set].sort();
+  }, [questions]);
 
   const filteredQs = useMemo(() => {
     return questions.filter((q) => {
       const matchSearch = !search || q.text.toLowerCase().includes(search.toLowerCase());
       const matchLevel = lvlFilter === "All" || q.difficulty_levels?.label === lvlFilter;
-      return matchSearch && matchLevel;
+      const matchCompany = !companyFilter || (q.companies || []).includes(companyFilter);
+      return matchSearch && matchLevel && matchCompany;
     });
-  }, [questions, search, lvlFilter]);
+  }, [questions, search, lvlFilter, companyFilter]);
 
   const doneCount = useMemo(
     () => questions.filter((q) => statuses[qKey(q.id)] === "Done").length,
@@ -124,6 +133,22 @@ export default function QuestionList({
                 background: sectionPct === 100 ? 'var(--color-success)' : 'var(--color-accent)',
               }}
             />
+          </div>
+        )}
+
+        {/* Company chips */}
+        {allCompanies.length > 0 && (
+          <div className="flex gap-1.5 flex-wrap">
+            {allCompanies.map(c => (
+              <button key={c} onClick={() => setCompanyFilter(prev => prev === c ? null : c)}
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
+                  companyFilter === c
+                    ? "bg-accent/15 border-accent/40 text-accent"
+                    : "bg-hover border-border text-ghost hover:text-muted hover:border-accent/30"
+                }`}>
+                {c}
+              </button>
+            ))}
           </div>
         )}
 
