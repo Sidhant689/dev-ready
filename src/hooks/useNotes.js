@@ -21,9 +21,9 @@ export function useNotes(user, questionId) {
         .select("content")
         .eq("user_id", user.id)
         .eq("question_id", questionId)
-        .single()
+        .maybeSingle()
         .then(({ data, error }) => {
-          if (error && error.code !== "PGRST116") return;
+          if (error) return;
           setNote(data?.content ?? "");
         });
     } else {

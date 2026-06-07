@@ -8,6 +8,7 @@ import { useBookmarks } from "./hooks/useBookmarks";
 import { useUserSettings } from "./hooks/useUserSettings";
 import { qKey } from "./utils/helpers";
 import { fetchTopics, fetchSections, fetchQuestions, fetchQuestionById } from "./services/questionService";
+import { supabase } from "./config/supabaseClient";
 import TopBar from "./components/TopBar";
 import Sidebar from "./components/Sidebar";
 import QuestionList from "./components/QuestionList";
@@ -21,6 +22,8 @@ import AuthModal from "./components/AuthModal";
 import Toast from "./components/Toast";
 import GlobalSearch from "./components/GlobalSearch";
 import UserSettings from "./components/UserSettings";
+import NotificationDrawer from "./components/NotificationDrawer";
+import { useNotifications } from "./hooks/useNotifications";
 
 /* ── Simple view router ──────────────────────────────────────────── */
 function useRoute(user, isLoading) {
@@ -58,6 +61,15 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quizOpen, setQuizOpen] = useState(false);
   const [simOpen, setSimOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const { notifications, unreadCount, loading: notifLoading, loadAll: loadNotifs, markRead, markAllRead } = useNotifications(user);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!user?.id) { setIsAdmin(false); return; }
+    supabase.from("users").select("role").eq("id", user.id).single()
+      .then(({ data }) => setIsAdmin(data?.role === "admin"))
+      .catch(() => {});
+  }, [user?.id]);
 
   const [sectionQuestions, setSectionQuestions] = useState([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -327,6 +339,8 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
         onLogoClick={() => { setActiveTopic(null); setActiveSection(null); closeQuestion(); }}
         onSearchOpen={() => setSearchOpen(true)}
         onSettingsOpen={() => setSettingsOpen(true)}
+        unreadCount={unreadCount}
+        onNotifOpen={() => setNotifOpen(true)}
         onSignIn={() => onOpenAuth("signin")}
         onSignOut={onSignOut}
         theme={theme}
@@ -386,6 +400,7 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
               user={user}
               isBookmarked={isBookmarked(activeQ.id)}
               onToggleBookmark={toggleBookmark}
+              isAdmin={isAdmin}
             />
           ) : activeSection ? (
             <QuestionList
@@ -453,6 +468,17 @@ function AppShell({ user, isGuest, onOpenAuth, onSignOut }) {
           onOpenAuth={onOpenAuth}
         />
       )}
+
+      <NotificationDrawer
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        notifications={notifications}
+        loading={notifLoading}
+        onMarkRead={markRead}
+        onMarkAllRead={markAllRead}
+        unreadCount={unreadCount}
+        onLoad={loadNotifs}
+      />
 
       {quizOpen && (
         <QuizMode

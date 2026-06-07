@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useTheme } from "../hooks/useTheme";
 import { useAdminAuth } from "../hooks/useAdminAuth";
 import { supabase } from "../config/supabaseClient";
 import { renderMarkdown } from "../utils/markdown";
@@ -9,9 +10,12 @@ import {
   Plus, Pencil, Trash2, ChevronRight, Search,
   UserCircle, Crown, X, Eye,
   Upload, Download, Table2, AlertTriangle,
+  Bell, MessageSquare, Megaphone, Send, Pin, ThumbsUp,
 } from "lucide-react";
+import { fetchAllComments, deleteComment, togglePin } from "../services/commentService";
+import { sendBroadcast, fetchBroadcasts, fetchAllNotifications } from "../services/notificationService";
 import {
-  getAdminStats, getRecentUsers,
+  getAdminStats, getRecentUsers, getEngagementStats,
   adminGetTopics, adminCreateTopic, adminUpdateTopic, adminDeleteTopic,
   adminGetSections, adminCreateSection, adminUpdateSection, adminDeleteSection,
   adminGetQuestions, adminCreateQuestion, adminUpdateQuestion, adminDeleteQuestion,
@@ -86,6 +90,7 @@ function AdminDashboard() {
   const [health, setHealth] = useState(null);
   const [topicPerf, setTopicPerf] = useState([]);
   const [recent, setRecent] = useState([]);
+  const [engagement, setEngagement] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -94,8 +99,9 @@ function AdminDashboard() {
       getContentHealth(),
       getTopicPerformance(),
       getRecentUsers(6),
-    ]).then(([s, h, tp, r]) => {
-      setStats(s); setHealth(h); setTopicPerf(tp); setRecent(r);
+      getEngagementStats(),
+    ]).then(([s, h, tp, r, e]) => {
+      setStats(s); setHealth(h); setTopicPerf(tp); setRecent(r); setEngagement(e);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -239,6 +245,29 @@ function AdminDashboard() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Engagement Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        {[
+          { label: "Comments",     key: "comments",    icon: <MessageSquare size={15} strokeWidth={1.7} />, cls: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",  nav: "notifs" },
+          { label: "Pinned",       key: "pinned",      icon: <Pin           size={15} strokeWidth={1.7} />, cls: "text-warning   bg-warning/10   border-warning/20",        nav: "notifs" },
+          { label: "Announcements",key: "broadcasts",  icon: <Megaphone     size={15} strokeWidth={1.7} />, cls: "text-violet-400 bg-violet-500/10 border-violet-500/20",  nav: "notifs" },
+          { label: "Ratings",      key: "ratings",     icon: <ThumbsUp      size={15} strokeWidth={1.7} />, cls: "text-success   bg-success/10   border-success/20",        nav: null     },
+          { label: "New Today",    key: "activeToday", icon: <Bell          size={15} strokeWidth={1.7} />, cls: "text-cyan-400  bg-cyan-500/10  border-cyan-500/20",       nav: "notifs" },
+        ].map(({ label, key, icon, cls }) => (
+          <div key={key} className="bg-panel border border-border rounded-xl p-4 flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-lg border flex items-center justify-center shrink-0 ${cls}`}>
+              {icon}
+            </div>
+            <div>
+              {loading ? <div className="h-6 w-10 bg-hover rounded animate-pulse" /> : (
+                <p className="text-2xl font-bold text-heading tabular-nums leading-none">{engagement?.[key] ?? 0}</p>
+              )}
+              <p className="text-xs text-muted font-medium mt-0.5">{label}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Topic Performance */}
@@ -1397,16 +1426,525 @@ function AdminBulkImport() {
   );
 }
 
+/* ── Admin Notifications & Comments ─────────────────────────── */
+function AdminNotifications({ adminUser }) {
+  const [tab, setTab] = useState("broadcast");
+  const [broadcastTitle, setBroadcastTitle] = useState("");
+  const [broadcastBody, setBroadcastBody] = useState("");
+  const [targetType, setTargetType] = useState("all");
+  const [userSearch, setUserSearch] = useState("");
+  const [selectedUsers, setSelectedUsers] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [sending, setSending] = useState(false);
+  const [sendSuccess, setSendSuccess] = useState(false);
+  const [broadcasts, setBroadcasts] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [commentSearch, setCommentSearch] = useState("");
+  const [commentFilter, setCommentFilter] = useState("all");
+  const [filterTopic, setFilterTopic] = useState("");
+  const [filterSection, setFilterSection] = useState("");
+  const [filterQuestion, setFilterQuestion] = useState("");
+  const [loadingComments, setLoadingComments] = useState(false);
+
+  useEffect(() => {
+    fetchBroadcasts().then(setBroadcasts).catch(() => {});
+    adminGetUsers(200).then(setAllUsers).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "comments") return;
+    setLoadingComments(true);
+    fetchAllComments({ search: commentSearch }).then(setComments).catch(() => {}).finally(() => setLoadingComments(false));
+  }, [tab, commentSearch]);
+
+  // Derive unique topics/sections/questions from loaded comments for filter dropdowns
+  const commentTopics   = [...new Map(comments.map(c => [c.questions?.sections?.topics?.id, c.questions?.sections?.topics]).filter(([id]) => id)).values()];
+  const commentSections = [...new Map(comments.filter(c => !filterTopic || c.questions?.sections?.topics?.id == filterTopic).map(c => [c.questions?.sections?.id, c.questions?.sections]).filter(([id]) => id)).values()];
+  const commentQuestions = [...new Map(comments.filter(c => {
+    if (filterTopic && c.questions?.sections?.topics?.id != filterTopic) return false;
+    if (filterSection && c.questions?.sections?.id != filterSection) return false;
+    return true;
+  }).map(c => [c.question_id, c.questions]).filter(([id]) => id)).values()];
+
+  async function handleSendBroadcast(e) {
+    e.preventDefault();
+    if (!broadcastTitle.trim() || !broadcastBody.trim()) return;
+    if (targetType === "specific" && selectedUsers.length === 0) {
+      alert("Select at least one user for specific targeting.");
+      return;
+    }
+    setSending(true);
+    try {
+      await sendBroadcast(adminUser?.id, {
+        title: broadcastTitle.trim(),
+        body: broadcastBody.trim(),
+        targetType,
+        targetUserIds: targetType === "specific" ? selectedUsers : [],
+      });
+      setSendSuccess(true);
+      setBroadcastTitle(""); setBroadcastBody(""); setSelectedUsers([]);
+      const fresh = await fetchBroadcasts();
+      setBroadcasts(fresh);
+      setTimeout(() => setSendSuccess(false), 3000);
+    } catch (e) { alert(e.message); } finally { setSending(false); }
+  }
+
+  async function handleDeleteComment(id) {
+    if (!confirm("Delete this comment?")) return;
+    await deleteComment(id);
+    setComments(prev => prev.filter(c => c.id !== id));
+  }
+
+  async function handlePinComment(id, isPinned) {
+    await togglePin(id, isPinned);
+    setComments(prev => prev.map(c => c.id === id ? { ...c, is_pinned: !isPinned } : c));
+  }
+
+  function toggleUser(id) {
+    setSelectedUsers(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  function timeAgo(iso) {
+    const d = (Date.now() - new Date(iso)) / 1000;
+    if (d < 60) return "just now";
+    if (d < 3600) return `${Math.floor(d / 60)}m ago`;
+    if (d < 86400) return `${Math.floor(d / 3600)}h ago`;
+    return `${Math.floor(d / 86400)}d ago`;
+  }
+
+  const filteredUsers = allUsers.filter(u =>
+    !userSearch || u.email.toLowerCase().includes(userSearch.toLowerCase()) || (u.full_name || "").toLowerCase().includes(userSearch.toLowerCase())
+  );
+
+  const filteredComments = comments.filter(c => {
+    if (commentFilter === "active")  { if (c.is_deleted || c.is_pinned) return false; }
+    else if (commentFilter === "pinned")  { if (!c.is_pinned || c.is_deleted) return false; }
+    else if (commentFilter === "deleted") { if (!c.is_deleted) return false; }
+    if (filterTopic    && c.questions?.sections?.topics?.id != filterTopic)   return false;
+    if (filterSection  && c.questions?.sections?.id != filterSection)         return false;
+    if (filterQuestion && c.question_id != filterQuestion)                    return false;
+    return true;
+  });
+
+  const commentStats = {
+    total:   comments.length,
+    pinned:  comments.filter(c => c.is_pinned && !c.is_deleted).length,
+    deleted: comments.filter(c => c.is_deleted).length,
+    active:  comments.filter(c => !c.is_deleted).length,
+  };
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="shrink-0 px-6 py-4 border-b border-border flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/20 text-accent flex items-center justify-center shrink-0">
+          <Bell size={15} strokeWidth={1.8} />
+        </div>
+        <div>
+          <h1 className="text-base font-bold text-heading">Notifications & Comments</h1>
+          <p className="text-[11px] text-muted">Send announcements, moderate comments, view activity</p>
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div className="shrink-0 flex gap-1 px-6 pt-3 border-b border-border">
+        {[
+          { id: "broadcast", label: "Send Announcement", Icon: Megaphone },
+          { id: "history",   label: "Sent History",      Icon: Bell },
+          { id: "comments",  label: "Comments",          Icon: MessageSquare },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-b-2 transition-colors cursor-pointer -mb-px ${
+              tab === t.id ? "border-accent text-accent" : "border-transparent text-muted hover:text-primary"
+            }`}>
+            <t.Icon size={12} strokeWidth={1.8} />
+            {t.label}
+            {t.id === "history" && broadcasts.length > 0 && (
+              <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded bg-hover text-ghost tabular-nums">{broadcasts.length}</span>
+            )}
+            {t.id === "comments" && commentStats.total > 0 && (
+              <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded bg-hover text-ghost tabular-nums">{commentStats.total}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6">
+
+        {/* ── Broadcast composer ── */}
+        {tab === "broadcast" && (
+          <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+            {/* Form — left */}
+            <div className="xl:col-span-3 space-y-5">
+              <div className="bg-panel border border-border rounded-2xl p-6">
+                <h2 className="text-sm font-bold text-heading mb-4 flex items-center gap-2">
+                  <Megaphone size={14} strokeWidth={1.8} className="text-warning" />
+                  New Announcement
+                </h2>
+                <form onSubmit={handleSendBroadcast} className="space-y-4">
+                  {/* Target */}
+                  <div>
+                    <label className="text-xs font-semibold text-soft block mb-1.5">Target audience</label>
+                    <div className="flex gap-2">
+                      {[["all", "All Users"], ["specific", "Specific Users"]].map(([val, lbl]) => (
+                        <button key={val} type="button" onClick={() => setTargetType(val)}
+                          className={`flex-1 h-9 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                            targetType === val ? "bg-accent/10 border-accent/40 text-accent" : "bg-hover border-border text-muted hover:border-accent/30"
+                          }`}>
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Specific user picker */}
+                  {targetType === "specific" && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-soft block">
+                        Select users
+                        {selectedUsers.length > 0 && <span className="ml-2 text-accent font-bold">{selectedUsers.length} selected</span>}
+                      </label>
+                      <div className="relative">
+                        <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" strokeWidth={1.8} />
+                        <input value={userSearch} onChange={e => setUserSearch(e.target.value)}
+                          placeholder="Search users…"
+                          className="w-full h-8 pl-8 pr-3 rounded-lg bg-hover border border-border text-xs text-primary outline-none focus:border-accent transition-colors placeholder:text-ghost" />
+                      </div>
+                      <div className="max-h-40 overflow-y-auto border border-border rounded-lg divide-y divide-border/50">
+                        {filteredUsers.slice(0, 30).map(u => {
+                          const sel = selectedUsers.includes(u.id);
+                          return (
+                            <button key={u.id} type="button" onClick={() => toggleUser(u.id)}
+                              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors cursor-pointer ${sel ? "bg-accent/5" : "hover:bg-hover"}`}>
+                              <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${sel ? "bg-accent border-accent" : "border-border"}`}>
+                                {sel && <Check size={10} strokeWidth={3} className="text-white" />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-[11px] font-medium text-primary truncate">{u.email}</p>
+                                {u.full_name && <p className="text-[10px] text-ghost truncate">{u.full_name}</p>}
+                              </div>
+                            </button>
+                          );
+                        })}
+                        {filteredUsers.length === 0 && <p className="text-xs text-ghost text-center py-4">No users found</p>}
+                      </div>
+                      {selectedUsers.length > 0 && (
+                        <button type="button" onClick={() => setSelectedUsers([])} className="text-[10px] text-ghost hover:text-danger cursor-pointer">Clear selection</button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Title */}
+                  <div>
+                    <label className="text-xs font-semibold text-soft block mb-1.5">Title</label>
+                    <input value={broadcastTitle} onChange={e => setBroadcastTitle(e.target.value)}
+                      placeholder="e.g. New questions added — Java Collections"
+                      className="w-full h-10 bg-hover border border-border focus:border-accent/50 rounded-lg px-3 text-sm text-primary outline-none transition-colors placeholder:text-ghost" />
+                  </div>
+
+                  {/* Message */}
+                  <div>
+                    <label className="text-xs font-semibold text-soft block mb-1.5">Message</label>
+                    <textarea value={broadcastBody} onChange={e => setBroadcastBody(e.target.value)}
+                      placeholder="Write your announcement here…"
+                      rows={4}
+                      className="w-full bg-hover border border-border focus:border-accent/50 rounded-lg px-3 py-2.5 text-sm text-primary outline-none resize-none transition-colors placeholder:text-ghost" />
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button type="submit" disabled={sending || !broadcastTitle.trim() || !broadcastBody.trim()}
+                      className="flex items-center gap-2 h-10 px-5 rounded-xl bg-accent hover:bg-accent-hover text-white text-sm font-semibold cursor-pointer disabled:opacity-50 transition-all"
+                      style={{ boxShadow: "0 0 12px rgba(99,102,241,0.25)" }}>
+                      <Send size={13} strokeWidth={2} />
+                      {sending ? "Sending…" : targetType === "all" ? "Send to All Users" : `Send to ${selectedUsers.length} User${selectedUsers.length !== 1 ? "s" : ""}`}
+                    </button>
+                    {sendSuccess && (
+                      <span className="flex items-center gap-1 text-xs text-success font-semibold">
+                        <CheckCircle size={13} strokeWidth={2} /> Sent!
+                      </span>
+                    )}
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            {/* Info + stats — right */}
+            <div className="xl:col-span-2 space-y-4">
+              <div className="bg-panel border border-border rounded-xl p-5">
+                <p className="text-xs font-bold text-soft mb-3">How it works</p>
+                <div className="space-y-2.5">
+                  {[
+                    "Announcements appear in the notification bell for all targeted users",
+                    "Users can dismiss them individually",
+                    "They appear in real-time without page refresh",
+                    "Specific Users targeting sends only to selected accounts",
+                  ].map((t, i) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <div className="w-4 h-4 rounded-full bg-accent/10 border border-accent/20 text-accent flex items-center justify-center shrink-0 mt-0.5 text-[9px] font-bold">{i + 1}</div>
+                      <p className="text-[11px] text-muted leading-relaxed">{t}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {broadcasts.length > 0 && (
+                <div className="bg-panel border border-border rounded-xl p-5">
+                  <p className="text-xs font-bold text-soft mb-3">Recent Sends</p>
+                  <div className="space-y-2">
+                    {broadcasts.slice(0, 3).map(b => (
+                      <div key={b.id} className="flex items-start gap-2">
+                        <Megaphone size={11} strokeWidth={1.8} className="text-ghost mt-0.5 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-semibold text-soft truncate">{b.title}</p>
+                          <p className="text-[10px] text-ghost">{timeAgo(b.created_at)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Broadcast history ── */}
+        {tab === "history" && (
+          <div className="space-y-3">
+            {broadcasts.length === 0 ? (
+              <div className="text-center py-16">
+                <Bell size={28} strokeWidth={1.2} className="text-ghost mx-auto mb-2" />
+                <p className="text-sm text-muted">No announcements sent yet</p>
+              </div>
+            ) : (
+              <div className="bg-panel border border-border rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-hover/30">
+                      <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost">Title</th>
+                      <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost">Message</th>
+                      <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost w-24">Target</th>
+                      <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost w-24">Sent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {broadcasts.map(b => (
+                      <tr key={b.id} className="border-b border-border/40 hover:bg-hover/20 transition-colors">
+                        <td className="px-5 py-3">
+                          <p className="text-xs font-semibold text-primary">{b.title}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="text-[11px] text-muted line-clamp-2 max-w-xs">{b.body}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md border ${
+                            b.target_type === "all" ? "bg-accent/10 text-accent border-accent/20" : "bg-warning/10 text-warning border-warning/20"
+                          }`}>
+                            {b.target_type === "all" ? "All" : `${b.target_user_ids?.length ?? 0} users`}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-[11px] text-ghost tabular-nums">{timeAgo(b.created_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Comments moderation ── */}
+        {tab === "comments" && (
+          <div className="space-y-4">
+            {/* Stats bar */}
+            {!loadingComments && comments.length > 0 && (
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: "Total",   value: commentStats.total,   cls: "text-primary", bg: "bg-hover"     },
+                  { label: "Active",  value: commentStats.active,  cls: "text-success", bg: "bg-success/5" },
+                  { label: "Pinned",  value: commentStats.pinned,  cls: "text-warning", bg: "bg-warning/5" },
+                  { label: "Deleted", value: commentStats.deleted, cls: "text-danger",  bg: "bg-danger/5"  },
+                ].map(({ label, value, cls, bg }) => (
+                  <button key={label} onClick={() => setCommentFilter(label.toLowerCase())}
+                    className={`${bg} border rounded-xl p-3 text-center transition-all cursor-pointer ${
+                      commentFilter === label.toLowerCase() ? "border-accent/40 ring-1 ring-accent/20" : "border-border hover:border-accent/20"
+                    }`}>
+                    <p className={`text-xl font-bold tabular-nums ${cls}`}>{value}</p>
+                    <p className="text-[10px] text-ghost mt-0.5">{label}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Topic → Section → Question drill-down filters */}
+            <div className="flex flex-wrap gap-2 p-3 bg-panel border border-border rounded-xl">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-ghost uppercase tracking-wider shrink-0 self-center">
+                <Layers size={11} strokeWidth={2} />
+                Filter by:
+              </div>
+              <select value={filterTopic} onChange={e => { setFilterTopic(e.target.value); setFilterSection(""); setFilterQuestion(""); }}
+                className="h-8 px-2.5 rounded-lg bg-hover border border-border text-xs text-primary outline-none focus:border-accent cursor-pointer">
+                <option value="">All Topics ({commentTopics.length})</option>
+                {commentTopics.map(t => {
+                  const count = comments.filter(c => c.questions?.sections?.topics?.id === t?.id).length;
+                  return <option key={t?.id} value={t?.id}>{t?.label} ({count})</option>;
+                })}
+              </select>
+              <select value={filterSection} onChange={e => { setFilterSection(e.target.value); setFilterQuestion(""); }}
+                disabled={!filterTopic}
+                className="h-8 px-2.5 rounded-lg bg-hover border border-border text-xs text-primary outline-none focus:border-accent cursor-pointer disabled:opacity-40">
+                <option value="">All Sections ({commentSections.length})</option>
+                {commentSections.map(s => {
+                  const count = comments.filter(c => c.questions?.sections?.id === s?.id).length;
+                  return <option key={s?.id} value={s?.id}>{s?.label} ({count})</option>;
+                })}
+              </select>
+              <select value={filterQuestion} onChange={e => setFilterQuestion(e.target.value)}
+                disabled={!filterSection}
+                className="h-8 px-2.5 rounded-lg bg-hover border border-border text-xs text-primary outline-none focus:border-accent cursor-pointer disabled:opacity-40 max-w-xs">
+                <option value="">All Questions ({commentQuestions.length})</option>
+                {commentQuestions.map(q => {
+                  const count = comments.filter(c => c.question_id === q?.id).length;
+                  return <option key={q?.id} value={q?.id}>{q?.text?.slice(0, 50)}{q?.text?.length > 50 ? "…" : ""} ({count})</option>;
+                })}
+              </select>
+              {(filterTopic || filterSection || filterQuestion) && (
+                <button onClick={() => { setFilterTopic(""); setFilterSection(""); setFilterQuestion(""); }}
+                  className="h-8 px-2.5 rounded-lg border border-border bg-hover text-[11px] text-ghost hover:text-danger hover:border-danger/30 transition-colors cursor-pointer flex items-center gap-1">
+                  <X size={10} strokeWidth={2} /> Clear
+                </button>
+              )}
+              {(filterTopic || filterSection || filterQuestion) && (
+                <span className="ml-auto self-center text-[11px] text-accent font-semibold">{filteredComments.length} result{filteredComments.length !== 1 ? "s" : ""}</span>
+              )}
+            </div>
+
+            {/* Search + status filter row */}
+            <div className="flex flex-wrap gap-2">
+              <div className="relative flex-1 min-w-48">
+                <Search size={13} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-ghost" />
+                <input value={commentSearch} onChange={e => setCommentSearch(e.target.value)}
+                  placeholder="Search comment content…"
+                  className="w-full h-9 pl-9 pr-3 bg-panel border border-border focus:border-accent/50 rounded-lg text-sm text-primary outline-none transition-colors placeholder:text-ghost" />
+              </div>
+              <div className="flex gap-1">
+                {[["all", "All"], ["active", "Active"], ["pinned", "Pinned"], ["deleted", "Deleted"]].map(([val, lbl]) => (
+                  <button key={val} onClick={() => setCommentFilter(val)}
+                    className={`h-9 px-3 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
+                      commentFilter === val ? "bg-accent/10 border-accent/40 text-accent" : "bg-panel border-border text-muted hover:border-accent/30"
+                    }`}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Comments table */}
+            {loadingComments ? (
+              <div className="flex items-center justify-center py-12 gap-2">
+                <div className="w-4 h-4 rounded-full border-2 border-border border-t-accent" style={{ animation: "spin 0.8s linear infinite" }} />
+                <span className="text-xs text-muted">Loading comments…</span>
+              </div>
+            ) : filteredComments.length === 0 ? (
+              <div className="text-center py-16">
+                <MessageSquare size={28} strokeWidth={1.2} className="text-ghost mx-auto mb-2" />
+                <p className="text-sm text-muted">No comments found</p>
+              </div>
+            ) : (
+              <div className="bg-panel border border-border rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-hover/30">
+                      <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost">Comment</th>
+                      <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost">Question & Tags</th>
+                      <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost w-20">Status</th>
+                      <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost w-20">When</th>
+                      <th className="text-right px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-ghost w-28">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredComments.map(c => {
+                      const q = c.questions;
+                      const topic   = q?.sections?.topics?.label;
+                      const section = q?.sections?.label;
+                      const diff    = q?.difficulty_levels?.label;
+                      const diffCls = diff === "Basic" ? "bg-success/10 text-success border-success/20"
+                                    : diff === "Intermediate" ? "bg-warning/10 text-warning border-warning/20"
+                                    : diff === "Advanced" ? "bg-danger/10 text-danger border-danger/20"
+                                    : "bg-hover text-ghost border-border";
+                      return (
+                        <tr key={c.id} className={`border-b border-border/40 hover:bg-hover/20 transition-colors ${c.is_deleted ? "opacity-50" : ""}`}>
+                          <td className="px-5 py-3 max-w-xs">
+                            <p className="text-xs text-primary leading-relaxed line-clamp-3">{c.content}</p>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-[11px] text-muted line-clamp-2 mb-1.5">{q?.text?.slice(0, 80) ?? "—"}{q?.text?.length > 80 ? "…" : ""}</p>
+                            <div className="flex flex-wrap gap-1">
+                              {topic && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-accent/10 text-accent border border-accent/20">{topic}</span>
+                              )}
+                              {section && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-hover text-muted border border-border">{section}</span>
+                              )}
+                              {diff && (
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${diffCls}`}>{diff}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            {c.is_deleted
+                              ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-danger/10 text-danger border border-danger/20">Deleted</span>
+                              : c.is_pinned
+                              ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-warning/10 text-warning border border-warning/20">Pinned</span>
+                              : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-success/10 text-success border border-success/20">Active</span>
+                            }
+                          </td>
+                          <td className="px-4 py-3 text-[11px] text-ghost tabular-nums whitespace-nowrap">{timeAgo(c.created_at)}</td>
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-1.5 justify-end">
+                              {!c.is_deleted && (
+                                <button onClick={() => handlePinComment(c.id, c.is_pinned)}
+                                  className={`flex items-center gap-1 h-6 px-2 rounded-md border text-[10px] font-semibold cursor-pointer transition-colors ${
+                                    c.is_pinned ? "bg-warning/10 border-warning/30 text-warning" : "bg-hover border-border text-ghost hover:text-warning hover:border-warning/30"
+                                  }`}>
+                                  <Pin size={9} strokeWidth={2.5} />
+                                  {c.is_pinned ? "Unpin" : "Pin"}
+                                </button>
+                              )}
+                              {!c.is_deleted && (
+                                <button onClick={() => handleDeleteComment(c.id)}
+                                  className="flex items-center gap-1 h-6 px-2 rounded-md border bg-hover border-border text-[10px] font-semibold text-ghost hover:text-danger hover:border-danger/30 cursor-pointer transition-colors">
+                                  <Trash2 size={9} strokeWidth={2.5} />
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Admin Layout ────────────────────────────────────────────── */
 const NAV = [
   { id: "dashboard", label: "Dashboard",    Icon: LayoutDashboard },
   { id: "content",   label: "Content",      Icon: BookOpen        },
   { id: "import",    label: "Bulk Import",  Icon: Upload          },
   { id: "users",     label: "Users",        Icon: Users           },
+  { id: "notifs",    label: "Notifications", Icon: Bell           },
 ];
 
 function AdminLayout({ adminUser }) {
   const [view, setView] = useState("dashboard");
+  const { theme, toggleTheme } = useTheme();
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -1447,13 +1985,27 @@ function AdminLayout({ adminUser }) {
 
         {/* Back to app + user */}
         <div className="border-t border-border p-3 space-y-1">
-          <a
-            href="/"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-muted hover:bg-hover hover:text-primary transition-colors"
-          >
-            <ArrowLeft size={12} strokeWidth={1.7} />
-            Back to App
-          </a>
+          <div className="flex items-center gap-1">
+            <a href="/"
+              className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-muted hover:bg-hover hover:text-primary transition-colors">
+              <ArrowLeft size={12} strokeWidth={1.7} />
+              Back to App
+            </a>
+            <button onClick={toggleTheme}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-ghost hover:text-primary hover:bg-hover transition-colors cursor-pointer shrink-0"
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+              {theme === "dark" ? (
+                <svg width="14" height="14" viewBox="0 0 15 15" fill="none">
+                  <circle cx="7.5" cy="7.5" r="3" stroke="currentColor" strokeWidth="1.3"/>
+                  <path d="M7.5 1v1.5M7.5 12.5V14M1 7.5h1.5M12.5 7.5H14M2.9 2.9l1.06 1.06M11.04 11.04l1.06 1.06M2.9 12.1l1.06-1.06M11.04 3.96l1.06-1.06" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+                </svg>
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <path d="M12.5 8.5A5.5 5.5 0 0 1 5.5 1.5a5.5 5.5 0 1 0 7 7z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
+          </div>
           <div className="px-3 py-2">
             <p className="text-[11px] font-medium text-soft truncate">{adminUser?.email}</p>
             <button onClick={signOut} className="text-[10px] text-ghost hover:text-danger transition-colors cursor-pointer mt-0.5">
@@ -1469,6 +2021,7 @@ function AdminLayout({ adminUser }) {
         {view === "content"   && <AdminContent />}
         {view === "import"    && <AdminBulkImport />}
         {view === "users"     && <AdminUsers />}
+        {view === "notifs"    && <AdminNotifications adminUser={adminUser} />}
       </main>
     </div>
   );

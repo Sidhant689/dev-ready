@@ -19,6 +19,25 @@ export async function getAdminStats() {
   };
 }
 
+export async function getEngagementStats() {
+  const [comments, pinned, broadcasts, ratings, activeToday] = await Promise.all([
+    supabase.from("comments").select("id", { count: "exact", head: true }).eq("is_deleted", false),
+    supabase.from("comments").select("id", { count: "exact", head: true }).eq("is_pinned", true).eq("is_deleted", false),
+    supabase.from("broadcasts").select("id", { count: "exact", head: true }),
+    supabase.from("answer_ratings").select("id", { count: "exact", head: true }),
+    supabase.from("comments").select("id", { count: "exact", head: true })
+      .eq("is_deleted", false)
+      .gte("created_at", new Date(Date.now() - 86400000).toISOString()),
+  ]);
+  return {
+    comments:    comments.count    ?? 0,
+    pinned:      pinned.count      ?? 0,
+    broadcasts:  broadcasts.count  ?? 0,
+    ratings:     ratings.count     ?? 0,
+    activeToday: activeToday.count ?? 0,
+  };
+}
+
 export async function getRecentUsers(limit = 8) {
   const { data, error } = await supabase
     .from("users")

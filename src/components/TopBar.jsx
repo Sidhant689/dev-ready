@@ -1,4 +1,4 @@
-export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut, onSearchOpen, onSettingsOpen, theme, onToggleTheme, onLogoClick }) {
+export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest, onMenuClick, onSignIn, onSignOut, onSearchOpen, onSettingsOpen, theme, onToggleTheme, onLogoClick, unreadCount = 0, onNotifOpen }) {
   const pct = totalAll > 0 ? Math.round((totalDone / totalAll) * 100) : 0;
 
   // Derive display name / initials from user metadata
@@ -106,6 +106,25 @@ export default function TopBar({ totalDone, totalAll, streak = 0, user, isGuest,
             <span className="hidden md:flex items-center gap-1 text-xs text-warning font-medium">
               🔥 {streak}d
             </span>
+          )}
+
+          {/* Notification bell — logged-in only */}
+          {!isGuest && (
+            <button
+              onClick={onNotifOpen}
+              className="relative w-8 h-8 flex items-center justify-center rounded-md text-muted hover:text-primary hover:bg-hover transition-colors cursor-pointer"
+              title="Notifications"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/>
+              </svg>
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 rounded-full bg-accent text-white text-[9px] font-bold flex items-center justify-center px-0.5 tabular-nums"
+                  style={{ boxShadow: "0 0 8px rgba(99,102,241,0.5)" }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
           )}
 
           {/* Theme toggle */}
