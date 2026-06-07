@@ -1,3 +1,12 @@
+-- ================================================================
+-- 05_user_bookmarks_table.sql
+-- Bookmarked questions per user. Stores denormalized labels so the
+-- sidebar can display bookmarks without extra joins.
+-- One row per (user_id, question_id) pair.
+--
+-- Depends on: 01_users_table.sql
+-- ================================================================
+
 CREATE TABLE IF NOT EXISTS public.user_bookmarks (
   id          BIGSERIAL PRIMARY KEY,
   user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

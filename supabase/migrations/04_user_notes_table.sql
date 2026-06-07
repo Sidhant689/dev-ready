@@ -1,4 +1,11 @@
--- User notes per question
+-- ================================================================
+-- 04_user_notes_table.sql
+-- Per-user notes per question. Supports auto-save from the Notes tab.
+-- One row per (user_id, question_id) pair — upserted on every save.
+--
+-- Depends on: 01_users_table.sql
+-- ================================================================
+
 CREATE TABLE IF NOT EXISTS public.user_notes (
   id          BIGSERIAL PRIMARY KEY,
   user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
